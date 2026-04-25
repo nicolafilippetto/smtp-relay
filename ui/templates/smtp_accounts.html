@@ -51,7 +51,8 @@
         <td class="mono">{{ r.username }}</td>
         <td class="mono small">
           {% if r.allowed_cidrs %}
-            {{ r.allowed_cidrs.replace('\n', ', ') | e }}
+            {{ r.allowed_cidrs | replace('
+', ', ') | e }}
           {% else %}
             <span class="muted">any</span>
           {% endif %}
