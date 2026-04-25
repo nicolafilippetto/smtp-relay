@@ -1,0 +1,45 @@
+# =============================================================================
+# SMTP Relay — UI service dependencies
+# Generated: 2026-04-24
+# All versions pinned to the latest stable release on PyPI at generation time.
+# =============================================================================
+
+# Web framework + ASGI server.
+fastapi==0.136.0
+uvicorn[standard]==0.44.0
+
+# Pydantic 2 is required by FastAPI 0.136; pinned explicitly for clarity.
+pydantic==2.13.0
+pydantic-settings==2.14.0
+
+# Form / multipart parsing for FastAPI (required for OAuth2PasswordRequestForm
+# and generic <form> POST handling).
+python-multipart==0.0.20
+
+# Templating + signed cookies + CSRF-capable HMAC signing.
+jinja2==3.1.6
+itsdangerous==2.2.0
+
+# Rate limiting middleware for FastAPI.
+slowapi==0.1.9
+
+# ORM + async driver + migrations.
+SQLAlchemy==2.0.49
+aiosqlite==0.22.1
+alembic==1.18.4
+
+# Password hashing.
+bcrypt==5.0.0
+
+# Fernet symmetric encryption.
+cryptography>=46.0.5
+
+# TOTP (RFC 6238) + provisioning URI.
+pyotp==2.9.0
+
+# QR-code rendering (SVG) for TOTP enrolment.
+qrcode==8.2
+
+# Microsoft Graph stack (used by the "test connection" button).
+msal==1.36.0
+httpx==0.28.1

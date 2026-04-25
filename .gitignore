@@ -1,0 +1,31 @@
+# Secrets e configurazione locale
+.env
+*.env
+.env.*
+
+# Database locale
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# ZAP reports
+zap-reports/
+
+# Log
+*.log
+logs/
+
+# Docker volumes locali
+data/
+!.env.example
+!.env.example

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Archive{% endblock %}
+{% block content %}
+<h1>Sent-mail archive</h1>
+
+<section class="card">
+  <p class="small muted">Archive on disk: <strong>{{ disk_bytes|bytes }}</strong></p>
+
+  {% if index %}
+  <ul class="tree">
+    {% for year, months in index.items() %}
+    <li>
+      <strong>{{ year }}</strong>
+      <ul>
+        {% for month, days in months.items() %}
+        <li>
+          {{ month }}
+          <ul>
+            {% for day, count in days.items() %}
+            <li>
+              <a href="/archive/{{ year }}/{{ month }}/{{ day }}">
+                {{ year }}-{{ month }}-{{ day }}
+              </a>
+              <span class="muted small">({{ count }} messages)</span>
+            </li>
+            {% endfor %}
+          </ul>
+        </li>
+        {% endfor %}
+      </ul>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">The archive is empty.</p>
+  {% endif %}
+</section>
+{% endblock %}

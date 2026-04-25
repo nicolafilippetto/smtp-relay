@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Tenant — Config{% endblock %}
+{% block content %}
+<h1>Configuration</h1>
+{% with active='tenant' %}{% include "_confignav.html" %}{% endwith %}
+
+<section class="card">
+  <h2>Entra ID (Azure AD) tenant</h2>
+  <p class="small muted">
+    The relay uses the OAuth 2.0 Client Credentials Grant to call
+    <code>POST /users/{sender}/sendMail</code> on Microsoft Graph.
+    The app registration needs the <strong>Mail.Send</strong>
+    <em>application</em> permission with admin consent granted.
+    See the README for the full setup.
+  </p>
+
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if request.query_params.get('saved') %}
+    <p class="flash flash-info">Saved. Run “Test connection” to verify.</p>
+  {% elif request.query_params.get('tested') %}
+    <p class="flash flash-{{ 'info' if cfg and cfg.last_test_ok else 'warn' }}">
+      Test completed. See status below.
+    </p>
+  {% endif %}
+
+  <form method="post" action="/config/tenant" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <label>
+      Tenant ID
+      <input type="text" name="tenant_id" required
+             value="{{ cfg.tenant_id if cfg and cfg.tenant_id else '' }}">
+    </label>
+
+    <label>
+      Application (Client) ID
+      <input type="text" name="client_id" required
+             value="{{ cfg.client_id if cfg and cfg.client_id else '' }}">
+    </label>
+
+    <label>
+      Client secret
+      <input type="password" name="client_secret"
+             placeholder="{% if has_secret %}•••••• (leave empty to keep the existing secret){% else %}Enter a new client secret{% endif %}"
+             autocomplete="new-password">
+    </label>
+
+    <div class="row-actions">
+      <button type="submit" class="btn btn-primary">Save</button>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Connection test</h2>
+  <table class="kv">
+    <tr><th>Last test</th><td>{{ cfg.last_test_at|dt if cfg else "—" }}</td></tr>
+    <tr>
+      <th>Result</th>
+      <td>
+        {% if cfg and cfg.last_test_ok %}
+          <span class="pill pill-ok">OK</span>
+        {% elif cfg and cfg.last_test_ok is sameas false %}
+          <span class="pill pill-err">FAIL</span>
+        {% else %}—{% endif %}
+      </td>
+    </tr>
+    {% if cfg and cfg.last_test_error %}
+    <tr><th>Error</th><td class="error">{{ cfg.last_test_error }}</td></tr>
+    {% endif %}
+    <tr><th>Token expires</th><td>{{ cfg.last_token_expires_at|dt if cfg else "—" }}</td></tr>
+  </table>
+
+  <form method="post" action="/config/tenant/test">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="btn">Test connection</button>
+  </form>
+</section>
+{% endblock %}

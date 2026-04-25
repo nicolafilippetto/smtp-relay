@@ -1,0 +1,9 @@
+{# Usage: {% with active='tenant' %}{% include "_confignav.html" %}{% endwith %} #}
+<nav class="subnav">
+  <a href="/config/tenant"    {% if active == 'tenant' %}class="active"{% endif %}>Tenant</a>
+  <a href="/config/senders"   {% if active == 'senders' %}class="active"{% endif %}>Authorised senders</a>
+  <a href="/config/whitelist" {% if active == 'whitelist' %}class="active"{% endif %}>IP whitelist</a>
+  <a href="/config/settings"  {% if active == 'settings' %}class="active"{% endif %}>Settings</a>
+  <a href="/config/users"     {% if active == 'users' %}class="active"{% endif %}>Users</a>
+  <a href="/config/bans"      {% if active == 'bans' %}class="active"{% endif %}>Bans</a>
+</nav>

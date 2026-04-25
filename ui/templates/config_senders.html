@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Senders — Config{% endblock %}
+{% block content %}
+<h1>Configuration</h1>
+{% with active='senders' %}{% include "_confignav.html" %}{% endwith %}
+
+<section class="card">
+  <h2>Authorised senders</h2>
+  <p class="small muted">
+    Only messages whose <code>From:</code> address appears in this list
+    are accepted. Others are rejected with <code>550 Sender not authorized</code>.
+  </p>
+
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+  <form method="post" action="/config/senders" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="email" name="address" placeholder="notifications@example.com" required>
+    <input type="text"  name="description" placeholder="Description (optional)">
+    <button type="submit" class="btn btn-primary">Add</button>
+  </form>
+
+  {% if rows %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Address</th><th>Description</th><th>Status</th><th>Created</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="mono">{{ r.address }}</td>
+        <td>{{ r.description or "" }}</td>
+        <td>
+          <span class="pill pill-{{ 'ok' if r.is_enabled else 'muted' }}">
+            {{ "enabled" if r.is_enabled else "disabled" }}
+          </span>
+        </td>
+        <td>{{ r.created_at|dt }}</td>
+        <td class="row-actions">
+          <form method="post" action="/config/senders/{{ r.id }}/toggle">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-small">
+              {{ "Disable" if r.is_enabled else "Enable" }}
+            </button>
+          </form>
+          <form method="post" action="/config/senders/{{ r.id }}/delete"
+                data-confirm="Delete sender {{ r.address }}?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-small btn-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No authorised senders yet. The relay will reject every message.</p>
+  {% endif %}
+</section>
+{% endblock %}

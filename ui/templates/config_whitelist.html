@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}IP whitelist — Config{% endblock %}
+{% block content %}
+<h1>Configuration</h1>
+{% with active='whitelist' %}{% include "_confignav.html" %}{% endwith %}
+
+<section class="card">
+  <h2>IP whitelist</h2>
+  <p class="small muted">
+    Sources matching one of these CIDRs may submit mail without SMTP
+    <code>AUTH</code>. Accepts single IPs (e.g. <code>10.1.2.3</code>)
+    and network ranges (e.g. <code>10.0.0.0/8</code>).
+    Only effective when the whitelist mode is enabled under
+    <a href="/config/settings">Settings</a>.
+  </p>
+
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+  <form method="post" action="/config/whitelist" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="text" name="cidr" placeholder="10.0.0.0/24" required>
+    <input type="text" name="description" placeholder="Description (optional)">
+    <button type="submit" class="btn btn-primary">Add</button>
+  </form>
+
+  {% if rows %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>CIDR</th><th>Description</th><th>Status</th><th>Created</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="mono">{{ r.cidr }}</td>
+        <td>{{ r.description or "" }}</td>
+        <td>
+          <span class="pill pill-{{ 'ok' if r.is_enabled else 'muted' }}">
+            {{ "enabled" if r.is_enabled else "disabled" }}
+          </span>
+        </td>
+        <td>{{ r.created_at|dt }}</td>
+        <td class="row-actions">
+          <form method="post" action="/config/whitelist/{{ r.id }}/toggle">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-small">
+              {{ "Disable" if r.is_enabled else "Enable" }}
+            </button>
+          </form>
+          <form method="post" action="/config/whitelist/{{ r.id }}/delete"
+                data-confirm="Delete {{ r.cidr }}?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-small btn-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No whitelist entries yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Archive {{ year }}-{{ month }}-{{ day }}{% endblock %}
+{% block content %}
+<h1>Archive — {{ year }}-{{ month }}-{{ day }}</h1>
+<p><a href="/archive">← back to index</a></p>
+
+<section class="card">
+  {% if files %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>File</th><th>Size</th><th>Modified</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in files %}
+      <tr>
+        <td class="mono">{{ f.name }}</td>
+        <td>{{ f.size|bytes }}</td>
+        <td>{{ f.mtime|dt }}</td>
+        <td class="row-actions">
+          <a class="btn btn-small" href="/archive/view?path={{ f.rel_path|urlencode }}">View</a>
+          <a class="btn btn-small"
+             href="/archive/download?path={{ f.rel_path|urlencode }}">Download</a>
+          <form method="post" action="/archive/resend"
+                data-confirm="Resend {{ f.name }}?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="path" value="{{ f.rel_path }}">
+            <button type="submit" class="btn btn-small">Resend</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No files for this day.</p>
+  {% endif %}
+</section>
+{% endblock %}

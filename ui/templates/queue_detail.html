@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Queue #{{ row.id }}{% endblock %}
+{% block content %}
+<h1>Mail #{{ row.id }}</h1>
+
+<p><a href="/queue">← back to queue</a></p>
+
+<section class="card">
+  <h2>Summary</h2>
+  <table class="kv">
+    <tr><th>Status</th>
+      <td><span class="pill status-{{ row.status.value }}">{{ row.status.value }}</span></td>
+    </tr>
+    <tr><th>Received</th><td>{{ row.timestamp_received|dt }}</td></tr>
+    <tr><th>From</th><td class="mono">{{ row.sender }}</td></tr>
+    <tr><th>Recipients</th>
+      <td>
+        {% if recipients %}
+          <ul class="plain">
+            {% for a in recipients %}<li class="mono">{{ a }}</li>{% endfor %}
+          </ul>
+        {% else %}—{% endif %}
+      </td>
+    </tr>
+    <tr><th>Subject</th><td>{{ row.subject or "—" }}</td></tr>
+    <tr><th>Attempts</th><td>{{ row.attempts }}</td></tr>
+    <tr><th>Last attempt</th><td>{{ row.last_attempt|dt if row.last_attempt else "—" }}</td></tr>
+    <tr><th>Next attempt</th><td>{{ row.next_attempt_at|dt if row.next_attempt_at else "—" }}</td></tr>
+    {% if row.last_error %}
+    <tr><th>Last error</th><td class="error">{{ row.last_error }}</td></tr>
+    {% endif %}
+    <tr><th>Source IP</th><td class="mono">{{ row.source_ip or "—" }}</td></tr>
+    <tr><th>Source user</th><td class="mono">{{ row.source_username or "—" }}</td></tr>
+    {% if row.archive_path %}
+    <tr><th>Archive</th><td class="mono">{{ row.archive_path }}</td></tr>
+    {% endif %}
+  </table>
+
+  <div class="row-actions">
+    {% if row.status.value in ('dead','failed','pending') %}
+    <form method="post" action="/queue/{{ row.id }}/retry">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn btn-primary">Retry now</button>
+    </form>
+    {% endif %}
+    <form method="post" action="/queue/{{ row.id }}/delete"
+          data-confirm="Delete queue row {{ row.id }}? This does not touch the archive.">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn btn-danger">Delete from queue</button>
+    </form>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Headers</h2>
+  {% if headers %}
+  <table class="data">
+    <tbody>
+      {% for k, v in headers %}
+      <tr><th>{{ k }}</th><td class="mono wrap-text">{{ v }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">No headers available.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Body preview</h2>
+  {% if body_preview %}
+  <pre class="body-preview">{{ body_preview }}</pre>
+  {% if body_truncated %}<p class="small muted">(truncated)</p>{% endif %}
+  {% else %}<p class="muted">No previewable body.</p>{% endif %}
+</section>
+{% endblock %}

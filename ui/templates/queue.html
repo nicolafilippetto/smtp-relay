@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Queue{% endblock %}
+{% block content %}
+<h1>Mail queue</h1>
+
+<section class="card">
+  <div class="status-counts">
+    <a href="/queue" class="status-chip {% if not selected_status %}active{% endif %}">
+      All <span class="muted">({{ total }})</span>
+    </a>
+    {% for s in all_statuses %}
+    <a href="/queue?status={{ s }}"
+       class="status-chip status-{{ s }} {% if selected_status == s %}active{% endif %}">
+      {{ s }} <span class="muted">({{ counts_by_status[s] }})</span>
+    </a>
+    {% endfor %}
+  </div>
+
+  {% if counts_by_status.get('dead', 0) > 0 %}
+  <form method="post" action="/queue/retry-all-dead"
+        data-confirm="Requeue ALL dead messages?">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="btn">Retry all dead ({{ counts_by_status['dead'] }})</button>
+  </form>
+  {% endif %}
+
+  {% if rows %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>ID</th><th>Received</th><th>From</th><th>Subject</th>
+        <th>Status</th><th>Attempts</th><th>Next attempt</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="mono">{{ r.id }}</td>
+        <td>{{ r.timestamp_received|dt }}</td>
+        <td class="mono truncate">{{ r.sender }}</td>
+        <td class="truncate">{{ r.subject or "—" }}</td>
+        <td>
+          <span class="pill status-{{ r.status.value }}">{{ r.status.value }}</span>
+        </td>
+        <td>{{ r.attempts }}</td>
+        <td>{{ r.next_attempt_at|dt if r.next_attempt_at else "—" }}</td>
+        <td><a class="btn btn-small" href="/queue/{{ r.id }}">View</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <nav class="pager">
+    {% if page > 1 %}
+      <a href="?status={{ selected_status or '' }}&page={{ page - 1 }}">← Previous</a>
+    {% endif %}
+    <span class="muted">Page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %}
+      <a href="?status={{ selected_status or '' }}&page={{ page + 1 }}">Next →</a>
+    {% endif %}
+  </nav>
+  {% else %}
+  <p class="muted">No messages to show.</p>
+  {% endif %}
+</section>
+{% endblock %}

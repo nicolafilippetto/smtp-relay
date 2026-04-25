@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}SMTP accounts{% endblock %}
+{% block content %}
+<h1>SMTP accounts</h1>
+
+<section class="card">
+  <h2>Add account</h2>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" action="/smtp-accounts" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>
+      Username
+      <input type="text" name="username" required>
+    </label>
+    <label>
+      Password (min 12 chars)
+      <input type="password" name="password" required minlength="12"
+             autocomplete="new-password">
+    </label>
+    <label>
+      Allowed source IPs / CIDRs
+      <textarea name="allowed_cidrs" rows="2"
+                placeholder="empty = any IP. Example: 10.0.0.0/24 or 192.168.1.10"></textarea>
+      <span class="small">One per line, or comma-separated. Login is refused if the source IP does not match any of these.</span>
+    </label>
+    <label>
+      Description (optional)
+      <input type="text" name="description">
+    </label>
+    <button type="submit" class="btn btn-primary">Create</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Existing accounts ({{ rows|length }})</h2>
+  {% if rows %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Allowed IPs</th>
+        <th>Description</th>
+        <th>Status</th>
+        <th>Created</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="mono">{{ r.username }}</td>
+        <td class="mono small">
+          {% if r.allowed_cidrs %}
+            {{ r.allowed_cidrs.replace('\n', ', ') }}
+          {% else %}
+            <span class="muted">any</span>
+          {% endif %}
+        </td>
+        <td>{{ r.description or "" }}</td>
+        <td>
+          <span class="pill pill-{{ 'ok' if r.is_enabled else 'muted' }}">
+            {{ "enabled" if r.is_enabled else "disabled" }}
+          </span>
+        </td>
+        <td>{{ r.created_at|dt }}</td>
+        <td class="row-actions">
+          <a class="btn btn-small" href="/smtp-accounts/{{ r.id }}/edit">Edit</a>
+          <form method="post" action="/smtp-accounts/{{ r.id }}/toggle">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-small">
+              {{ "Disable" if r.is_enabled else "Enable" }}
+            </button>
+          </form>
+          <form method="post" action="/smtp-accounts/{{ r.id }}/delete"
+                data-confirm="Delete account {{ r.username }}?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-small btn-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No SMTP accounts yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

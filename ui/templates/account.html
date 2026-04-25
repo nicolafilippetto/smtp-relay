@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}My account{% endblock %}
+{% block content %}
+<h1>My account</h1>
+
+{% if request.query_params.get('saved') %}
+  <p class="flash flash-info">Password updated.</p>
+{% endif %}
+
+<section class="card card-narrow">
+  <h2>Profile</h2>
+  <table class="kv">
+    <tr><th>Username</th><td class="mono">{{ user.username }}</td></tr>
+    <tr><th>Status</th>
+      <td>
+        <span class="pill pill-{{ 'ok' if user.is_active else 'muted' }}">
+          {{ "active" if user.is_active else "disabled" }}
+        </span>
+      </td>
+    </tr>
+    <tr><th>TOTP enrolled</th>
+      <td>
+        <span class="pill pill-{{ 'ok' if user.totp_secret else 'warn' }}">
+          {{ "yes" if user.totp_secret else "no" }}
+        </span>
+        {% if user.totp_enrolled_at %}
+          <span class="small muted">on {{ user.totp_enrolled_at|dt }}</span>
+        {% endif %}
+      </td>
+    </tr>
+    <tr><th>Member since</th><td>{{ user.created_at|dt }}</td></tr>
+  </table>
+</section>
+
+<section class="card card-narrow">
+  <h2>Change password</h2>
+  <p class="small muted">Minimum 12 characters.</p>
+  <form method="post" action="/account/password" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>
+      Current password
+      <input type="password" name="current_password" required autocomplete="current-password">
+    </label>
+    <label>
+      New password
+      <input type="password" name="new_password" required minlength="12" autocomplete="new-password">
+    </label>
+    <label>
+      Confirm new password
+      <input type="password" name="confirm_password" required minlength="12" autocomplete="new-password">
+    </label>
+    <button type="submit" class="btn btn-primary">Update password</button>
+  </form>
+</section>
+
+<section class="card card-narrow">
+  <h2>Re-enrol TOTP</h2>
+  <p class="small muted">
+    Use this if you lost access to your authenticator app. Your current
+    session will be terminated and at next login you will scan a new
+    QR code.
+  </p>
+  <form method="post" action="/account/reset-totp"
+        data-confirm="This will terminate your session and force TOTP re-enrolment on next login. Proceed?">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="btn btn-danger">Reset my TOTP</button>
+  </form>
+</section>
+{% endblock %}

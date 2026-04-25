@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ rel_path }}{% endblock %}
+{% block content %}
+<h1>Archived message</h1>
+<p>
+  <a href="/archive">Archive</a> /
+  <span class="mono">{{ rel_path }}</span>
+  <span class="muted small">({{ size|bytes }})</span>
+</p>
+
+<div class="row-actions">
+  <a class="btn" href="/archive/download?path={{ rel_path|urlencode }}">Download .eml</a>
+  <form method="post" action="/archive/resend" data-confirm="Resend this message?">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="path" value="{{ rel_path }}">
+    <button type="submit" class="btn">Resend</button>
+  </form>
+</div>
+
+<section class="card">
+  <h2>Headers</h2>
+  {% if headers %}
+  <table class="data">
+    <tbody>
+      {% for k, v in headers %}
+      <tr><th>{{ k }}</th><td class="mono wrap-text">{{ v }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">No headers.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Body preview</h2>
+  {% if body_preview %}
+  <pre class="body-preview">{{ body_preview }}</pre>
+  {% if body_truncated %}<p class="small muted">(truncated)</p>{% endif %}
+  {% else %}
+  <p class="muted">No previewable body. Download the .eml to inspect it.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>{% block title %}{{ app_name }}{% endblock %} — {{ app_name }}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/">{{ app_name }}</a>
+      {% if session %}
+        <nav class="mainnav">
+          <a href="/dashboard">Dashboard</a>
+          <a href="/queue">Queue</a>
+          <a href="/archive">Archive</a>
+          <a href="/audit">Audit</a>
+          <a href="/smtp-accounts">SMTP Accounts</a>
+          <a href="/config/tenant">Config</a>
+        </nav>
+        <form class="logout" method="post" action="/logout">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <a class="who" href="/account">{{ session.username }}</a>
+          <button type="submit" class="btn btn-link">Sign out</button>
+        </form>
+      {% endif %}
+    </div>
+  </header>
+
+  <main class="wrap">
+    {% if flash %}
+      <div class="flash flash-{{ flash.level|default('info') }}">{{ flash.message }}</div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <span>{{ now.strftime("%Y-%m-%d %H:%M:%S UTC") }}</span>
+    <span class="muted">{{ app_name }}</span>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

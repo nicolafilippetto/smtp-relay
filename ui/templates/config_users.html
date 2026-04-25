@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Users — Config{% endblock %}
+{% block content %}
+<h1>Configuration</h1>
+{% with active='users' %}{% include "_confignav.html" %}{% endwith %}
+
+<section class="card">
+  <h2>Add user</h2>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if request.query_params.get('created') %}
+    <p class="flash flash-info">User created. They will be asked to change password and enrol TOTP at first login.</p>
+  {% elif request.query_params.get('password_reset') %}
+    <p class="flash flash-info">Password reset. The user must change it at next login.</p>
+  {% elif request.query_params.get('totp_reset') %}
+    <p class="flash flash-info">TOTP cleared. The user will be asked to re-enrol.</p>
+  {% endif %}
+
+  <form method="post" action="/config/users" class="inline-form" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="text" name="username" placeholder="Username" required>
+    <input type="password" name="password" placeholder="Temporary password (min 12 chars)"
+           minlength="12" required autocomplete="new-password">
+    <button type="submit" class="btn btn-primary">Create</button>
+  </form>
+  <p class="small muted">
+    Newly created users are forced to change password on first login and enrol TOTP.
+  </p>
+</section>
+
+<section class="card">
+  <h2>Existing users ({{ rows|length }})</h2>
+  {% if rows %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Status</th>
+        <th>TOTP</th>
+        <th>Must change pw</th>
+        <th>Created</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="mono">
+          {{ r.username }}
+          {% if r.id == session.user_id %}<span class="small muted">(you)</span>{% endif %}
+        </td>
+        <td>
+          <span class="pill pill-{{ 'ok' if r.is_active else 'muted' }}">
+            {{ "active" if r.is_active else "disabled" }}
+          </span>
+        </td>
+        <td>
+          <span class="pill pill-{{ 'ok' if r.totp_secret else 'warn' }}">
+            {{ "enrolled" if r.totp_secret else "not enrolled" }}
+          </span>
+        </td>
+        <td>
+          {% if r.must_change_password %}
+            <span class="pill pill-warn">yes</span>
+          {% else %}
+            <span class="muted small">—</span>
+          {% endif %}
+        </td>
+        <td>{{ r.created_at|dt }}</td>
+        <td class="row-actions">
+          {# Password reset form — admin sets a new password for the user #}
+          <form method="post" action="/config/users/{{ r.id }}/reset-password"
+                data-confirm="Reset password for {{ r.username }}?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="password" name="new_password" placeholder="new pw (≥12)"
+                   minlength="12" required autocomplete="new-password"
+                   style="width: 130px;">
+            <button type="submit" class="btn btn-small">Reset pw</button>
+          </form>
+
+          <form method="post" action="/config/users/{{ r.id }}/reset-totp"
+                data-confirm="Clear TOTP for {{ r.username }}? They will be asked to re-enrol at next login.">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-small">Reset TOTP</button>
+          </form>
+
+          {% if r.id != session.user_id %}
+          <form method="post" action="/config/users/{{ r.id }}/toggle">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-small">
+              {{ "Disable" if r.is_active else "Enable" }}
+            </button>
+          </form>
+
+          <form method="post" action="/config/users/{{ r.id }}/delete"
+                data-confirm="Delete user {{ r.username }}? This cannot be undone.">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-small btn-danger">Delete</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No users.</p>
+  {% endif %}
+</section>
+{% endblock %}

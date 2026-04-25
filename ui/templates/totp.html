@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Two-factor code{% endblock %}
+{% block content %}
+<section class="card card-narrow">
+  <h1>Enter your 6-digit code</h1>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" action="/login/totp" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>
+      Authenticator code
+      <input type="text" name="code" inputmode="numeric" pattern="[0-9 ]*"
+             maxlength="10" required autofocus autocomplete="one-time-code">
+    </label>
+    <button type="submit" class="btn btn-primary">Verify</button>
+  </form>
+</section>
+{% endblock %}

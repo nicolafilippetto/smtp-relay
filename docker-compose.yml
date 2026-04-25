@@ -1,0 +1,133 @@
+# =============================================================================
+# SMTP Relay Docker Compose
+# =============================================================================
+# Three services:
+#   - ui     : FastAPI management UI (internal, behind nginx)
+#   - relay  : aiosmtpd SMTP server that forwards via Microsoft Graph API
+#   - nginx  : TLS terminator in front of the UI (HTTP -> HTTPS redirect)
+#
+# Shared state lives in the `data` volume (SQLite DB + mail archive).
+# The UI and relay share the DB so the relay can read the current
+# configuration without polling a REST endpoint.
+# =============================================================================
+
+services:
+  ui:
+    build:
+      context: .
+      dockerfile: ./ui/Dockerfile
+    container_name: smtp-relay-ui
+    restart: unless-stopped
+    # The UI does NOT expose ports to the host; nginx is the entry point.
+    expose:
+      - "8000"
+    environment:
+      # --- Infrastructure secrets (required) ---
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+
+      # --- Database path inside the container ---
+      DATABASE_URL: "sqlite+aiosqlite:////data/relay.db"
+
+      # --- Archive path inside the container ---
+      ARCHIVE_PATH: "/data/archive"
+
+      # --- Session settings ---
+      SESSION_LIFETIME_HOURS: ${SESSION_LIFETIME_HOURS:-8}
+
+      # --- UI ban policy ---
+      UI_LOGIN_BAN_THRESHOLD: ${UI_LOGIN_BAN_THRESHOLD:-5}
+      UI_LOGIN_BAN_DURATION_MIN: ${UI_LOGIN_BAN_DURATION_MIN:-30}
+
+      # --- Admin reset (leave empty in normal operation) ---
+      ADMIN_RESET: ${ADMIN_RESET:-0}
+      ADMIN_NEW_PASSWORD: ${ADMIN_NEW_PASSWORD:-}
+
+      # --- Application identity used in logs and TOTP issuer ---
+      APP_NAME: ${APP_NAME:-SMTP Relay}
+
+      # --- Python runtime ---
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - data:/data
+    # Read-only FS except for /data and the Python tmp dirs we whitelist.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /var/tmp:size=16m,mode=1777
+    # Drop all capabilities; we don't need any privileged operation.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - relay-internal
+
+  relay:
+    build:
+      context: .
+      dockerfile: ./relay/Dockerfile
+    container_name: smtp-relay-smtp
+    restart: unless-stopped
+    ports:
+      # Default bind on all interfaces of the container; the operator MUST
+      # restrict reachability at the Docker network / host firewall level.
+      # See README -> Hardening.
+      - "${SMTP_BIND_HOST:-0.0.0.0}:${SMTP_BIND_PORT:-2525}:2525"
+    environment:
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      DATABASE_URL: "sqlite+aiosqlite:////data/relay.db"
+      ARCHIVE_PATH: "/data/archive"
+      SMTP_LISTEN_HOST: "0.0.0.0"
+      SMTP_LISTEN_PORT: "2525"
+      # Maximum message size (bytes). Defaults to 30 MiB.
+      SMTP_MAX_MESSAGE_SIZE: ${SMTP_MAX_MESSAGE_SIZE:-31457280}
+      # Retention minimum (hard-coded in source: 3 days) is enforced inside.
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /var/tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # The relay waits for the UI/alembic migration to create the schema.
+    depends_on:
+      ui:
+        condition: service_started
+    networks:
+      - relay-internal
+
+  nginx:
+    build:
+      context: .
+      dockerfile: ./nginx/Dockerfile
+    container_name: smtp-relay-nginx
+    restart: unless-stopped
+    ports:
+      - "${HTTP_BIND_HOST:-0.0.0.0}:${HTTP_PORT:-80}:80"
+      - "${HTTPS_BIND_HOST:-0.0.0.0}:${HTTPS_PORT:-443}:443"
+    volumes:
+      # Mount external certificates here to replace the self-signed one.
+      # Expected files: fullchain.pem, privkey.pem
+      - certs:/etc/nginx/certs
+    depends_on:
+      - ui
+    networks:
+      - relay-internal
+
+volumes:
+  data:
+    name: smtp-relay-data
+  certs:
+    name: smtp-relay-certs
+
+networks:
+  relay-internal:
+    name: smtp-relay-internal
+    driver: bridge

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ row.username }}{% endblock %}
+{% block content %}
+<h1>Edit SMTP account</h1>
+
+<section class="card card-narrow">
+  <p class="small muted">
+    Account username cannot be changed. Leave password empty to keep the
+    current one. Delete and re-create the account to change the username.
+  </p>
+
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+  <form method="post" action="/smtp-accounts/{{ row.id }}/edit" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>
+      Username
+      <input type="text" value="{{ row.username }}" disabled>
+    </label>
+    <label>
+      New password (optional)
+      <input type="password" name="password" minlength="12"
+             placeholder="leave blank to keep existing"
+             autocomplete="new-password">
+    </label>
+    <label>
+      Allowed source IPs / CIDRs
+      <textarea name="allowed_cidrs" rows="3"
+                placeholder="empty = any IP">{{ row.allowed_cidrs or '' }}</textarea>
+      <span class="small">One CIDR per line, or comma-separated. Empty means any source IP is allowed with correct credentials.</span>
+    </label>
+    <label>
+      Description
+      <input type="text" name="description" value="{{ row.description or '' }}">
+    </label>
+    <div class="row-actions">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <a class="btn" href="/smtp-accounts">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

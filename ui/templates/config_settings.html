@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Settings — Config{% endblock %}
+{% block content %}
+<h1>Configuration</h1>
+{% with active='settings' %}{% include "_confignav.html" %}{% endwith %}
+
+<section class="card">
+  <h2>Global settings</h2>
+
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if request.query_params.get('saved') %}
+    <p class="flash flash-info">Settings saved.</p>
+  {% endif %}
+
+  <form method="post" action="/config/settings" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <fieldset>
+      <legend>SMTP authentication</legend>
+      <label class="check">
+        <input type="checkbox" name="smtp_auth_local_enabled"
+               {% if row and row.smtp_auth_local_enabled %}checked{% endif %}>
+        Accept local credentials
+      </label>
+      <label class="check">
+        <input type="checkbox" name="smtp_whitelist_enabled"
+               {% if row and row.smtp_whitelist_enabled %}checked{% endif %}>
+        Allow whitelisted IPs without AUTH
+      </label>
+      <p class="small muted">At least one mode must be enabled.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>SMTP ban policy</legend>
+      <div class="grid grid-2">
+        <label>
+          Ban threshold (failures)
+          <input type="number" name="smtp_ban_threshold" min="1" max="100"
+                 value="{{ row.smtp_ban_threshold if row else 5 }}">
+        </label>
+        <label>
+          Ban duration (minutes)
+          <input type="number" name="smtp_ban_duration_min" min="1" max="10000"
+                 value="{{ row.smtp_ban_duration_min if row else 30 }}">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Queue</legend>
+      <label>
+        Max delivery attempts
+        <input type="number" name="queue_max_attempts" min="1" max="50"
+               value="{{ row.queue_max_attempts if row else 3 }}">
+      </label>
+      <label>
+        Sent-row retention (days)
+        <input type="number" name="queue_sent_retention_days" min="1" max="3650"
+               value="{{ row.queue_sent_retention_days if row else 30 }}">
+        <span class="small muted">
+          After this period, SENT rows are pruned from the queue table. The archive is separate.
+        </span>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Retention</legend>
+      <label>
+        Archive retention (days)
+        <input type="number" name="archive_retention_days"
+               min="{{ archive_floor }}" max="3650"
+               value="{{ row.archive_retention_days if row else 30 }}">
+        <span class="small muted">
+          Hard minimum: <strong>{{ archive_floor }} days</strong> — enforced in code.
+        </span>
+      </label>
+      <label>
+        Audit log retention (days)
+        <input type="number" name="audit_retention_days"
+               min="{{ audit_floor }}" max="3650"
+               value="{{ row.audit_retention_days if row else 90 }}">
+        <span class="small muted">
+          Hard minimum: <strong>{{ audit_floor }} days</strong> — enforced in code.
+        </span>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Rate limiting</legend>
+      <label class="check">
+        <input type="checkbox" name="rate_limit_enabled"
+               {% if row and row.rate_limit_enabled %}checked{% endif %}>
+        Enable inbound rate limiting
+      </label>
+      <div class="grid grid-2">
+        <label>
+          Scope
+          <select name="rate_limit_scope">
+            <option value="ip"       {% if row and row.rate_limit_scope == 'ip' %}selected{% endif %}>Per source IP</option>
+            <option value="username" {% if row and row.rate_limit_scope == 'username' %}selected{% endif %}>Per authenticated user</option>
+            <option value="both"     {% if (not row) or row.rate_limit_scope == 'both' %}selected{% endif %}>Both (independent counters)</option>
+          </select>
+        </label>
+        <label>
+          Threshold (messages)
+          <input type="number" name="rate_limit_threshold" min="1" max="100000"
+                 value="{{ row.rate_limit_threshold if row else 10 }}">
+        </label>
+        <label>
+          Window (seconds)
+          <input type="number" name="rate_limit_window_sec" min="1" max="86400"
+                 value="{{ row.rate_limit_window_sec if row else 60 }}">
+        </label>
+      </div>
+      <p class="small muted">
+        Counts accepted DATA commands within the window.
+        When the threshold is reached, further messages are rejected with
+        <code>452 4.7.1 Rate limit exceeded</code> (well-behaved clients retry later).
+      </p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Logging</legend>
+      <label class="check">
+        <input type="checkbox" name="log_mail_contents"
+               {% if row and row.log_mail_contents %}checked{% endif %}>
+        Log mail contents at DEBUG (passwords and tokens still scrubbed)
+      </label>
+    </fieldset>
+
+    <div class="row-actions">
+      <button type="submit" class="btn btn-primary">Save settings</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

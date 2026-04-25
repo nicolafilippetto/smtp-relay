@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Enrol two-factor{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Set up two-factor authentication</h1>
+  <p>
+    Scan the QR code with an authenticator app (Google Authenticator, Aegis,
+    1Password, Bitwarden, …), then enter the 6-digit code to confirm.
+  </p>
+
+  <div class="qr-wrap">
+    {{ qr_svg|safe }}
+  </div>
+
+  <p class="muted small">
+    Cannot scan the QR? Enter this key manually:
+    <code class="mono">{{ secret }}</code>
+  </p>
+
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" action="/login/totp/enrol" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>
+      Authenticator code
+      <input type="text" name="code" inputmode="numeric" pattern="[0-9 ]*"
+             maxlength="10" required autofocus autocomplete="one-time-code">
+    </label>
+    <button type="submit" class="btn btn-primary">Confirm</button>
+  </form>
+</section>
+{% endblock %}

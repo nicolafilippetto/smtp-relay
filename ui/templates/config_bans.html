@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Bans — Config{% endblock %}
+{% block content %}
+<h1>Configuration</h1>
+{% with active='bans' %}{% include "_confignav.html" %}{% endwith %}
+
+<section class="card">
+  <h2>Active bans</h2>
+  <p class="small muted">
+    Bans expire automatically at the indicated time. Use “Unban” to
+    clear a ban immediately.
+  </p>
+
+  {% if rows %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Kind</th><th>Scope</th><th>Value</th><th>Reason</th>
+        <th>Created</th><th>Until</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.kind.value }}</td>
+        <td>{{ r.scope.value }}</td>
+        <td class="mono">{{ r.value }}</td>
+        <td>{{ r.reason or "" }}</td>
+        <td>{{ r.created_at|dt }}</td>
+        <td>{{ r.until|dt }}</td>
+        <td>
+          <form method="post" action="/config/bans/{{ r.id }}/unban"
+                data-confirm="Unban {{ r.value }}?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-small btn-danger">Unban</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No active bans.</p>
+  {% endif %}
+</section>
+{% endblock %}

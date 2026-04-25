@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+
+<h1>Dashboard</h1>
+
+{% if alerts %}
+<section class="card">
+  <h2>Alerts</h2>
+  <ul class="alerts">
+    {% for a in alerts %}
+    <li class="alert alert-{{ a.level }}">{{ a.message }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<div class="grid grid-2">
+
+  <section class="card">
+    <h2>Relay status</h2>
+    <table class="kv">
+      <tr>
+        <th>State</th>
+        <td>
+          <span class="pill pill-{{ relay.state }}">{{ relay.state|upper }}</span>
+        </td>
+      </tr>
+      <tr><th>Started</th><td>{{ relay.started_at|dt }}</td></tr>
+      <tr><th>Last heartbeat</th><td>{{ relay.last_seen_at|dt }}</td></tr>
+      <tr>
+        <th>Uptime</th>
+        <td>
+          {% if relay.uptime_seconds is not none %}
+            {{ relay.uptime_seconds // 86400 }}d
+            {{ (relay.uptime_seconds % 86400) // 3600 }}h
+            {{ (relay.uptime_seconds % 3600) // 60 }}m
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% if relay.last_error %}
+      <tr><th>Last error</th><td class="error">{{ relay.last_error }}</td></tr>
+      {% endif %}
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Graph API</h2>
+    <table class="kv">
+      <tr>
+        <th>Configured</th>
+        <td>
+          {% if tenant and tenant.tenant_id and tenant.client_id and tenant.client_secret_enc %}
+            yes
+          {% else %}
+            <span class="error">no</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <th>Last test</th>
+        <td>
+          {% if tenant and tenant.last_test_at %}
+            {{ tenant.last_test_at|dt }} —
+            {% if tenant.last_test_ok %}
+              <span class="pill pill-ok">OK</span>
+            {% else %}
+              <span class="pill pill-err">FAIL</span>
+            {% endif %}
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      <tr><th>Token acquired</th><td>{{ tenant.last_token_acquired_at|dt if tenant else "—" }}</td></tr>
+      <tr><th>Token expires</th><td>{{ tenant.last_token_expires_at|dt if tenant else "—" }}</td></tr>
+      {% if tenant and tenant.last_test_error %}
+      <tr><th>Last error</th><td class="error">{{ tenant.last_test_error }}</td></tr>
+      {% endif %}
+    </table>
+    <p class="small muted">
+      <a href="/config/tenant">Go to Config → Tenant to re-run the test.</a>
+    </p>
+  </section>
+
+</div>
+
+<section class="card">
+  <h2>Mail stats</h2>
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Window</th>
+        <th>Received</th>
+        <th>Sent</th>
+        <th>Failed</th>
+        <th>Dead</th>
+        <th>Pending/Sending</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for label, key in [("Last 24h","h24"),("Last 7d","d7"),("Last 30d","d30")] %}
+      {% set s = stats[key] %}
+      <tr>
+        <th>{{ label }}</th>
+        <td>{{ s.pending + s.sending + s.sent + s.failed + s.dead }}</td>
+        <td>{{ s.sent }}</td>
+        <td>{{ s.failed }}</td>
+        <td>{{ s.dead }}</td>
+        <td>{{ s.pending + s.sending }}</td>
+      </tr>
+      {% endfor %}
+      <tr class="total">
+        <th>Current queue</th>
+        <td colspan="4">pending/sending: <strong>{{ pending }}</strong> · dead: <strong>{{ dead }}</strong></td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<div class="grid grid-2">
+
+  <section class="card">
+    <h2>Active bans ({{ active_bans|length }})</h2>
+    {% if active_bans %}
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Kind</th><th>Scope</th><th>Value</th><th>Until</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in active_bans %}
+          <tr>
+            <td>{{ b.kind.value }}</td>
+            <td>{{ b.scope.value }}</td>
+            <td class="mono">{{ b.value }}</td>
+            <td>{{ b.until|dt }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="small"><a href="/config/bans">Manage bans →</a></p>
+    {% else %}
+      <p class="muted">No active bans.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Archive disk usage</h2>
+    <table class="kv">
+      <tr><th>Used</th><td>{{ disk_bytes|bytes }}</td></tr>
+      <tr><th>Filesystem total</th><td>{{ disk_total|bytes }}</td></tr>
+      <tr><th>Usage</th><td>{{ "%.1f"|format(disk_pct) }}%</td></tr>
+      {% if settings %}
+      <tr><th>Archive retention</th><td>{{ settings.archive_retention_days }} days</td></tr>
+      <tr><th>Audit retention</th><td>{{ settings.audit_retention_days }} days</td></tr>
+      {% endif %}
+    </table>
+  </section>
+
+</div>
+
+<section class="card">
+  <h2>Recent audit events</h2>
+  {% if recent_events %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Time</th><th>Event</th><th>Outcome</th><th>User</th><th>IP</th><th>Details</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in recent_events %}
+      <tr>
+        <td>{{ e.timestamp|dt }}</td>
+        <td>{{ e.event_type.value }}</td>
+        <td>
+          <span class="pill pill-{{ 'ok' if e.outcome.value == 'success' else 'err' }}">
+            {{ e.outcome.value }}
+          </span>
+        </td>
+        <td>{{ e.username or "—" }}</td>
+        <td class="mono">{{ e.source_ip or "—" }}</td>
+        <td class="truncate">{{ e.details_json or "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="small"><a href="/audit">See all audit events →</a></p>
+  {% else %}
+  <p class="muted">No audit events recorded yet.</p>
+  {% endif %}
+</section>
+
+{% endblock %}

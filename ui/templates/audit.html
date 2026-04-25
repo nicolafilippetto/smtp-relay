@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+<h1>Audit log</h1>
+
+<section class="card">
+  <form method="get" action="/audit" class="filters">
+    <label>
+      Event
+      <select name="event_type">
+        <option value="">(any)</option>
+        {% for e in all_event_types %}
+        <option value="{{ e }}" {% if filters.event_type == e %}selected{% endif %}>{{ e }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Outcome
+      <select name="outcome">
+        <option value="">(any)</option>
+        {% for o in all_outcomes %}
+        <option value="{{ o }}" {% if filters.outcome == o %}selected{% endif %}>{{ o }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Username
+      <input type="text" name="username" value="{{ filters.username }}">
+    </label>
+    <label>
+      Source IP
+      <input type="text" name="source_ip" value="{{ filters.source_ip }}">
+    </label>
+    <label>
+      From
+      <input type="date" name="date_from" value="{{ filters.date_from }}">
+    </label>
+    <label>
+      To
+      <input type="date" name="date_to" value="{{ filters.date_to }}">
+    </label>
+    <div class="row-actions">
+      <button type="submit" class="btn btn-primary">Apply</button>
+      <a class="btn" href="/audit">Clear</a>
+      <a class="btn" href="/audit/export.csv?event_type={{ filters.event_type|urlencode }}&amp;outcome={{ filters.outcome|urlencode }}&amp;username={{ filters.username|urlencode }}&amp;source_ip={{ filters.source_ip|urlencode }}&amp;date_from={{ filters.date_from|urlencode }}&amp;date_to={{ filters.date_to|urlencode }}">
+        Export CSV
+      </a>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  {% if rows %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Time</th><th>Event</th><th>Outcome</th>
+        <th>User</th><th>Source IP</th><th>Details</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in rows %}
+      <tr>
+        <td>{{ e.timestamp|dt }}</td>
+        <td>{{ e.event_type.value }}</td>
+        <td>
+          <span class="pill pill-{{ 'ok' if e.outcome.value == 'success' else 'err' }}">
+            {{ e.outcome.value }}
+          </span>
+        </td>
+        <td>{{ e.username or "—" }}</td>
+        <td class="mono">{{ e.source_ip or "—" }}</td>
+        <td class="truncate">{{ e.details_json or "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <nav class="pager">
+    {% if page > 1 %}
+      <a href="?event_type={{ filters.event_type|urlencode }}&amp;outcome={{ filters.outcome|urlencode }}&amp;username={{ filters.username|urlencode }}&amp;source_ip={{ filters.source_ip|urlencode }}&amp;date_from={{ filters.date_from|urlencode }}&amp;date_to={{ filters.date_to|urlencode }}&amp;page={{ page - 1 }}">← Previous</a>
+    {% endif %}
+    <span class="muted">Page {{ page }} of {{ total_pages }} — {{ total }} events</span>
+    {% if page < total_pages %}
+      <a href="?event_type={{ filters.event_type|urlencode }}&amp;outcome={{ filters.outcome|urlencode }}&amp;username={{ filters.username|urlencode }}&amp;source_ip={{ filters.source_ip|urlencode }}&amp;date_from={{ filters.date_from|urlencode }}&amp;date_to={{ filters.date_to|urlencode }}&amp;page={{ page + 1 }}">Next →</a>
+    {% endif %}
+  </nav>
+  {% else %}
+  <p class="muted">No events match the current filters.</p>
+  {% endif %}
+</section>
+{% endblock %}
