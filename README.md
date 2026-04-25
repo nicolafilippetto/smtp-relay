@@ -72,7 +72,7 @@ April 2026. Summary:
 | SQLAlchemy / aiosqlite / alembic | 2.0.49 / 0.22.1 / 1.18.4 |
 | bcrypt | 5.0.0 |
 | pyotp / qrcode | 2.9.0 / 8.2 |
-| cryptography | 45.0.1 |
+| cryptography | 46.0.5 |
 | itsdangerous / slowapi | 2.2.0 / 0.1.9 |
 | nginx | 1.29-alpine |
 
@@ -505,11 +505,3 @@ smtp-relay/
     ├── entrypoint.sh             # Generates self-signed cert on first start
     └── nginx.conf
 ```
-
----
-
-## License
-
-This repository is delivered as source code without any implied licence.
-Consult your internal procurement / legal process before running it in
-production.
