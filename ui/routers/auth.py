@@ -128,9 +128,12 @@ async def login_form(
     # explicitly.
     response = render(request, "login.html", {"error": None, "csrf_token": token})
     if token != existing:
+        # `token` originates from issue_csrf_token() (see security.py),
+        # which uses itsdangerous + secrets.token_urlsafe(). It never
+        # contains user-supplied data — CodeQL false positive.
         response.set_cookie(
             CSRF_COOKIE,
-            token,
+            token,  # noqa: S604
             max_age=get_settings().session_lifetime_seconds,
             httponly=True,
             secure=True,

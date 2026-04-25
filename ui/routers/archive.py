@@ -18,6 +18,7 @@ import base64
 import datetime as _dt
 import json
 import logging
+import os.path
 from email import message_from_bytes
 from email.policy import default as email_default_policy
 from pathlib import Path
@@ -55,19 +56,38 @@ def _archive_root() -> Path:
 
 
 def _resolve_path(rel_or_abs: str) -> Path:
-    """Resolve a client-supplied path, ensuring it stays inside the archive."""
-    if not rel_or_abs:
+    """Resolve a client-supplied path, ensuring it stays inside the archive.
+
+    Two complementary guards are used so static analysers (CodeQL,
+    Bandit, etc.) can trace the validation:
+
+      1. ``Path.resolve().relative_to(root)`` — pythonic check, raises
+         ``ValueError`` for traversals.
+      2. ``os.path.commonpath`` — explicit, ASCII-string check that
+         analysers consistently recognise as a path-traversal guard.
+
+    Both are evaluated; either one alone would suffice.
+    """
+    if not rel_or_abs or not rel_or_abs.strip():
         raise HTTPException(status_code=400, detail="Missing path.")
     p = Path(rel_or_abs)
     if not p.is_absolute():
         p = _archive_root() / p
     resolved = p.resolve()
-    root = _archive_root()
-    # resolved must equal root or be a descendant of root.
+    root = _archive_root().resolve()
+    # Guard 1: pathlib check.
     try:
         resolved.relative_to(root)
     except ValueError as exc:
         raise HTTPException(status_code=403, detail="Path outside archive.") from exc
+    # Guard 2: explicit commonpath check that static analysers can follow.
+    try:
+        common = os.path.commonpath([str(resolved), str(root)])
+    except ValueError as exc:
+        # Different drives on Windows, etc.
+        raise HTTPException(status_code=403, detail="Path outside archive.") from exc
+    if common != str(root):
+        raise HTTPException(status_code=403, detail="Path outside archive.")
     if not resolved.exists() or not resolved.is_file():
         raise HTTPException(status_code=404, detail="Not found.")
     if resolved.suffix.lower() != ".eml":
@@ -133,10 +153,18 @@ async def day_view(
     if not (year.isdigit() and month.isdigit() and day.isdigit()):
         raise HTTPException(status_code=400, detail="Invalid date.")
     day_dir = (_archive_root() / year / month / day).resolve()
+    root = _archive_root().resolve()
+    # Dual guard so static analysers can follow the validation.
     try:
-        day_dir.relative_to(_archive_root())
+        day_dir.relative_to(root)
     except ValueError as exc:
         raise HTTPException(status_code=403, detail="Path outside archive.") from exc
+    try:
+        common = os.path.commonpath([str(day_dir), str(root)])
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="Path outside archive.") from exc
+    if common != str(root):
+        raise HTTPException(status_code=403, detail="Path outside archive.")
     if not day_dir.exists() or not day_dir.is_dir():
         raise HTTPException(status_code=404, detail="No messages for that day.")
 

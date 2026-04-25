@@ -175,7 +175,11 @@ async def retry_one(
             source_ip=request.client.host if request.client else None,
             details={"queue_id": row_id, "scope": "single"},
         )
-    return RedirectResponse(f"/queue/{row_id}", status_code=303)
+    # row_id is already an int (FastAPI path converter), but the
+    # explicit cast makes the integer type visible to static analysers
+    # so they don't flag the f-string as an open-redirect risk.
+    safe_id = int(row_id)
+    return RedirectResponse(f"/queue/{safe_id}", status_code=303)
 
 
 @router.post(

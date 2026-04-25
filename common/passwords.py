@@ -33,7 +33,14 @@ def _prepare(password: str) -> bytes:
         return raw
     # Pre-hash long passwords. base64 keeps the result within bcrypt's
     # 72-byte budget and avoids NULs that bcrypt would reject.
-    digest = hashlib.sha256(raw).digest()
+    #
+    # SHA-256 is used here ONLY as a length-reduction step before
+    # passing to bcrypt, NOT as the password hashing algorithm itself.
+    # bcrypt (with a 12-round salted cost factor) is the actual KDF.
+    # This is the standard "bcrypt + sha256 pre-hash" pattern used by
+    # major frameworks (Django, Passlib) to handle long passwords.
+    # nosec B324 - not used as a cryptographic hash; just a digest.
+    digest = hashlib.sha256(raw).digest()  # noqa: S324
     return base64.b64encode(digest)
 
 
