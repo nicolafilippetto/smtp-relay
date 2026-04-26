@@ -28,4 +28,3 @@ logs/
 # Docker volumes locali
 data/
 !.env.example
-!.env.example

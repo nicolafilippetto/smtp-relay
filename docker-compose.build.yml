@@ -1,0 +1,18 @@
+services:
+  ui:
+    build:
+      context: .
+      dockerfile: ./ui/Dockerfile
+    image: ghcr.io/nicolafilippetto/smtp-relay/ui:latest
+
+  relay:
+    build:
+      context: .
+      dockerfile: ./relay/Dockerfile
+    image: ghcr.io/nicolafilippetto/smtp-relay/relay:latest
+
+  nginx:
+    build:
+      context: .
+      dockerfile: ./nginx/Dockerfile
+    image: ghcr.io/nicolafilippetto/smtp-relay/nginx:latest
