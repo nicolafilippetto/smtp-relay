@@ -376,3 +376,16 @@ cp .env.example .env
 # fill in ENCRYPTION_KEY and SECRET_KEY
 docker compose -f docker-compose.build.yml up -d --build
 ```
+
+---
+
+## About this project
+
+This project was built entirely with [Claude](https://claude.ai) (Anthropic AI). After development, the following security checks were performed manually:
+
+- **SAST** (Static Application Security Testing) — static analysis of the source code
+- **DAST** (Dynamic Application Security Testing) — testing against a running instance
+- **Bug check** — manual review of logic and error handling
+- **CodeQL** — GitHub's CodeQL analysis workflow, run on the repository
+
+The project is provided as-is. Use it at your own risk and always review the security considerations in the [Hardening](#hardening) section before deploying to production.
