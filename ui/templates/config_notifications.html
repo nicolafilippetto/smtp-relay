@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Notifications — Config{% endblock %}
+{% block content %}
+<h1>Configuration</h1>
+{% with active='notifications' %}{% include "_confignav.html" %}{% endwith %}
+
+<section class="card">
+  <h2>Admin notifications</h2>
+  <p class="small muted">
+    Email a single administrator when anomalies are detected. Continuous
+    states (secret expiry, dead queue, disk usage, ...) are sent once a
+    day as a digest. Discrete events (bans, password changes, admin
+    reset) are sent in near real-time.
+  </p>
+
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if request.query_params.get('saved') %}
+    <p class="flash flash-info">Settings saved.</p>
+  {% endif %}
+  {% if request.query_params.get('tested') == 'ok' %}
+    <p class="flash flash-info">Test alert sent successfully.</p>
+  {% elif request.query_params.get('tested') == 'fail' %}
+    <p class="flash flash-warn">
+      Test alert FAILED. Reason:
+      {{ request.query_params.get('why', '(see audit page)') }}
+    </p>
+  {% endif %}
+
+  <form method="post" action="/config/notifications" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <fieldset>
+      <legend>Recipients</legend>
+      <label>
+        Recipient email (To)
+        <input type="email" name="admin_email_to" maxlength="320"
+               value="{{ row.admin_email_to or '' if row else '' }}">
+      </label>
+      <label>
+        Sender email (From)
+        <input type="email" name="admin_email_from" maxlength="320"
+               value="{{ row.admin_email_from or '' if row else '' }}">
+        <span class="small muted">
+          Must be one of the addresses in
+          <a href="/config/senders"><strong>Authorised senders</strong></a>
+          with status enabled, otherwise Graph will reject the alert.
+          {% if senders %}
+            Available:
+            {% for s in senders %}<code>{{ s.address }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.
+          {% else %}
+            <strong>No enabled authorised senders configured yet.</strong>
+          {% endif %}
+        </span>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Schedule</legend>
+      <div class="grid grid-2">
+        <label>
+          Secret expiry warning (days before)
+          <input type="number" name="alert_secret_expiry_days" min="1" max="365"
+                 value="{{ row.alert_secret_expiry_days if row else 30 }}">
+        </label>
+        <label>
+          Daily digest time (HH:MM, UTC)
+          <input type="time" name="alert_daily_time"
+                 value="{{ row.alert_daily_time if row else '09:00' }}">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Daily digest alerts</legend>
+      <p class="small muted">
+        Sent once a day at the configured time. If no condition is true,
+        no email is sent.
+      </p>
+      <label class="check">
+        <input type="checkbox" name="alert_secret_expiry"
+               {% if (not row) or row.alert_secret_expiry %}checked{% endif %}>
+        Application secret expiring or expired
+      </label>
+      <label class="check">
+        <input type="checkbox" name="alert_dead_queue"
+               {% if (not row) or row.alert_dead_queue %}checked{% endif %}>
+        Mail in DEAD queue
+      </label>
+      <label class="check">
+        <input type="checkbox" name="alert_relay_down"
+               {% if (not row) or row.alert_relay_down %}checked{% endif %}>
+        Relay process down (stale heartbeat)
+      </label>
+      <label class="check">
+        <input type="checkbox" name="alert_graph_test_failed"
+               {% if (not row) or row.alert_graph_test_failed %}checked{% endif %}>
+        Last Graph connection test failed
+      </label>
+      <label class="check">
+        <input type="checkbox" name="alert_disk_usage"
+               {% if (not row) or row.alert_disk_usage %}checked{% endif %}>
+        Archive volume above 80% capacity
+      </label>
+      <label class="check">
+        <input type="checkbox" name="alert_send_failures"
+               {% if (not row) or row.alert_send_failures %}checked{% endif %}>
+        Sustained mail send failures (24h)
+      </label>
+      <label class="check">
+        <input type="checkbox" name="alert_failed_login_spike"
+               {% if (not row) or row.alert_failed_login_spike %}checked{% endif %}>
+        Failed authentication spike (24h)
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Real-time alerts</legend>
+      <p class="small muted">
+        Sent within ~60 seconds of the event.
+      </p>
+      <label class="check">
+        <input type="checkbox" name="alert_user_banned"
+               {% if (not row) or row.alert_user_banned %}checked{% endif %}>
+        User or IP banned
+      </label>
+      <label class="check">
+        <input type="checkbox" name="alert_admin_reset"
+               {% if (not row) or row.alert_admin_reset %}checked{% endif %}>
+        Admin reset applied via env var (security signal)
+      </label>
+      <label class="check">
+        <input type="checkbox" name="alert_admin_password_change"
+               {% if (not row) or row.alert_admin_password_change %}checked{% endif %}>
+        Admin user password changed
+      </label>
+      <label class="check">
+        <input type="checkbox" name="alert_smtp_password_change"
+               {% if (not row) or row.alert_smtp_password_change %}checked{% endif %}>
+        SMTP account password changed
+      </label>
+    </fieldset>
+
+    <div class="row-actions">
+      <button type="submit" class="btn btn-primary">Save settings</button>
+    </div>
+  </form>
+</section>
+
+<section class="card card-narrow">
+  <h2>Send test alert</h2>
+  <p class="small muted">
+    Sends a fixed test message to the configured recipient using the
+    configured sender. Use this after saving to verify the wiring.
+  </p>
+  <form method="post" action="/config/notifications/test">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="btn">Send test alert</button>
+  </form>
+</section>
+{% endblock %}

@@ -8,15 +8,17 @@ endpoint.
 
 from __future__ import annotations
 
+import datetime as _dt
 import ipaddress
 import re
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import Form
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 def _clean(value: str | None) -> str:
@@ -30,6 +32,54 @@ class TenantConfigIn(BaseModel):
     client_id: Annotated[str, Field(min_length=1, max_length=64)]
     # Empty string means "leave existing secret untouched".
     client_secret: str = ""
+    # Optional secret expiry date; pair with `clear_secret_expires_at`
+    # to wipe the value.
+    secret_expires_at: Optional[_dt.date] = None
+    clear_secret_expires_at: bool = False
+    # Operator confirmation that the date in `secret_expires_at` reflects
+    # the new secret. Required only when a new client_secret is being
+    # submitted (enforced in the router, not here).
+    expiry_verified: bool = False
+
+
+class AdminNotificationsIn(BaseModel):
+    """Settings → Notifications page form."""
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    admin_email_to: str = ""
+    admin_email_from: str = ""
+    alert_secret_expiry_days: int = Field(ge=1, le=365, default=30)
+    alert_daily_time: str = "09:00"
+
+    alert_secret_expiry: bool = False
+    alert_dead_queue: bool = False
+    alert_relay_down: bool = False
+    alert_graph_test_failed: bool = False
+    alert_disk_usage: bool = False
+    alert_send_failures: bool = False
+    alert_failed_login_spike: bool = False
+    alert_user_banned: bool = False
+    alert_admin_reset: bool = False
+    alert_admin_password_change: bool = False
+    alert_smtp_password_change: bool = False
+
+    @field_validator("admin_email_to", "admin_email_from")
+    @classmethod
+    def _valid_email_or_blank(cls, v: str) -> str:
+        v = (v or "").strip().lower()
+        if not v:
+            return ""
+        if not _EMAIL_RE.match(v):
+            raise ValueError("Not a valid email address.")
+        return v
+
+    @field_validator("alert_daily_time")
+    @classmethod
+    def _valid_time(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not _HHMM_RE.match(v):
+            raise ValueError("Time must be in HH:MM 24h format (UTC).")
+        return v
 
 
 class SettingsIn(BaseModel):
@@ -122,11 +172,62 @@ def tenant_form(
     tenant_id: str = Form(""),
     client_id: str = Form(""),
     client_secret: str = Form(""),
+    secret_expires_at: str = Form(""),
+    clear_secret_expires_at: bool = Form(False),
+    expiry_verified: bool = Form(False),
 ) -> TenantConfigIn:
+    parsed_date: Optional[_dt.date] = None
+    raw = (secret_expires_at or "").strip()
+    if raw and not clear_secret_expires_at:
+        try:
+            parsed_date = _dt.date.fromisoformat(raw)
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid expiry date: {exc}. Expected YYYY-MM-DD."
+            ) from exc
     return TenantConfigIn(
         tenant_id=_clean(tenant_id),
         client_id=_clean(client_id),
         client_secret=client_secret,  # secret is not stripped: preserve leading/trailing chars
+        secret_expires_at=parsed_date,
+        clear_secret_expires_at=clear_secret_expires_at,
+        expiry_verified=expiry_verified,
+    )
+
+
+def notifications_form(
+    admin_email_to: str = Form(""),
+    admin_email_from: str = Form(""),
+    alert_secret_expiry_days: int = Form(30),
+    alert_daily_time: str = Form("09:00"),
+    alert_secret_expiry: bool = Form(False),
+    alert_dead_queue: bool = Form(False),
+    alert_relay_down: bool = Form(False),
+    alert_graph_test_failed: bool = Form(False),
+    alert_disk_usage: bool = Form(False),
+    alert_send_failures: bool = Form(False),
+    alert_failed_login_spike: bool = Form(False),
+    alert_user_banned: bool = Form(False),
+    alert_admin_reset: bool = Form(False),
+    alert_admin_password_change: bool = Form(False),
+    alert_smtp_password_change: bool = Form(False),
+) -> AdminNotificationsIn:
+    return AdminNotificationsIn(
+        admin_email_to=admin_email_to,
+        admin_email_from=admin_email_from,
+        alert_secret_expiry_days=alert_secret_expiry_days,
+        alert_daily_time=alert_daily_time,
+        alert_secret_expiry=alert_secret_expiry,
+        alert_dead_queue=alert_dead_queue,
+        alert_relay_down=alert_relay_down,
+        alert_graph_test_failed=alert_graph_test_failed,
+        alert_disk_usage=alert_disk_usage,
+        alert_send_failures=alert_send_failures,
+        alert_failed_login_spike=alert_failed_login_spike,
+        alert_user_banned=alert_user_banned,
+        alert_admin_reset=alert_admin_reset,
+        alert_admin_password_change=alert_admin_password_change,
+        alert_smtp_password_change=alert_smtp_password_change,
     )
 
 

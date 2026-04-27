@@ -21,6 +21,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import ValidationError
 from sqlalchemy import select
 
+from common import admin_alerts
 from common.audit import record as audit_record
 from common.constants import (
     ARCHIVE_RETENTION_MIN_DAYS,
@@ -40,10 +41,12 @@ from common.models import (
 )
 
 from ..forms import (
+    AdminNotificationsIn,
     CidrIn,
     SenderIn,
     SettingsIn,
     cidr_form,
+    notifications_form,
     sender_form,
     settings_form,
     tenant_form,
@@ -79,6 +82,7 @@ async def tenant_view(
             "session": session,
             "cfg": cfg,
             "has_secret": bool(cfg and cfg.client_secret_enc),
+            "today": _utcnow().date(),
             "error": None,
             "flash": None,
         },
@@ -95,13 +99,22 @@ async def tenant_save(
     tenant_id: str = Form(""),
     client_id: str = Form(""),
     client_secret: str = Form(""),
+    secret_expires_at: str = Form(""),
+    clear_secret_expires_at: bool = Form(False),
+    expiry_verified: bool = Form(False),
     session: SessionPayload = Depends(require_user),
 ):
     try:
         data = tenant_form(
-            tenant_id=tenant_id, client_id=client_id, client_secret=client_secret
+            tenant_id=tenant_id,
+            client_id=client_id,
+            client_secret=client_secret,
+            secret_expires_at=secret_expires_at,
+            clear_secret_expires_at=clear_secret_expires_at,
+            expiry_verified=expiry_verified,
         )
-    except ValidationError as exc:
+    except (ValidationError, ValueError) as exc:
+        msg = _first_error(exc) if isinstance(exc, ValidationError) else str(exc)
         return render(
             request,
             "config_tenant.html",
@@ -109,7 +122,31 @@ async def tenant_save(
                 "session": session,
                 "cfg": await _load_tenant(),
                 "has_secret": True,
-                "error": _first_error(exc),
+                "today": _utcnow().date(),
+                "error": msg,
+                "flash": None,
+            },
+            status_code=400,
+        )
+
+    # When a new client_secret is being submitted, the operator must
+    # explicitly confirm the expiry date is up-to-date. This guards
+    # against the common "I rotated but forgot to update the date"
+    # mistake.
+    if data.client_secret and not data.expiry_verified:
+        return render(
+            request,
+            "config_tenant.html",
+            {
+                "session": session,
+                "cfg": await _load_tenant(),
+                "has_secret": True,
+                "today": _utcnow().date(),
+                "error": (
+                    "When updating the client secret you must tick "
+                    "'I have verified the secret expiry date' to confirm "
+                    "the date below reflects the new secret."
+                ),
                 "flash": None,
             },
             status_code=400,
@@ -124,6 +161,10 @@ async def tenant_save(
         cfg.client_id = data.client_id
         if data.client_secret:
             cfg.client_secret_enc = encrypt_str(data.client_secret)
+        if data.clear_secret_expires_at:
+            cfg.secret_expires_at = None
+        elif data.secret_expires_at is not None:
+            cfg.secret_expires_at = data.secret_expires_at
         # Invalidate cached test status — the operator must re-run it.
         cfg.last_test_at = None
         cfg.last_test_ok = None
@@ -136,6 +177,10 @@ async def tenant_save(
                 "tenant_id": data.tenant_id,
                 "client_id": data.client_id,
                 "secret_updated": bool(data.client_secret),
+                "secret_expires_at": (
+                    cfg.secret_expires_at.isoformat()
+                    if cfg.secret_expires_at else None
+                ),
             },
         )
     return RedirectResponse("/config/tenant?saved=1", status_code=303)
@@ -629,6 +674,177 @@ async def bans_unban(
             },
         )
     return RedirectResponse("/config/bans", status_code=303)
+
+
+# =============================================================================
+# Admin notifications
+# =============================================================================
+
+@router.get("/notifications", include_in_schema=False)
+async def notifications_view(
+    request: Request,
+    session: SessionPayload = Depends(require_user),
+):
+    async with session_scope() as s:
+        row = await s.get(Settings, 1)
+        senders = (
+            await s.scalars(
+                select(AuthorisedSender)
+                .where(AuthorisedSender.is_enabled.is_(True))
+                .order_by(AuthorisedSender.address)
+            )
+        ).all()
+    return render(
+        request,
+        "config_notifications.html",
+        {
+            "session": session,
+            "row": row,
+            "senders": senders,
+            "error": None,
+            "flash": None,
+        },
+    )
+
+
+@router.post(
+    "/notifications",
+    include_in_schema=False,
+    dependencies=[Depends(require_csrf), Depends(require_user)],
+)
+async def notifications_save(
+    request: Request,
+    admin_email_to: str = Form(""),
+    admin_email_from: str = Form(""),
+    alert_secret_expiry_days: int = Form(30),
+    alert_daily_time: str = Form("09:00"),
+    alert_secret_expiry: bool = Form(False),
+    alert_dead_queue: bool = Form(False),
+    alert_relay_down: bool = Form(False),
+    alert_graph_test_failed: bool = Form(False),
+    alert_disk_usage: bool = Form(False),
+    alert_send_failures: bool = Form(False),
+    alert_failed_login_spike: bool = Form(False),
+    alert_user_banned: bool = Form(False),
+    alert_admin_reset: bool = Form(False),
+    alert_admin_password_change: bool = Form(False),
+    alert_smtp_password_change: bool = Form(False),
+    session: SessionPayload = Depends(require_user),
+):
+    try:
+        data: AdminNotificationsIn = notifications_form(
+            admin_email_to=admin_email_to,
+            admin_email_from=admin_email_from,
+            alert_secret_expiry_days=alert_secret_expiry_days,
+            alert_daily_time=alert_daily_time,
+            alert_secret_expiry=alert_secret_expiry,
+            alert_dead_queue=alert_dead_queue,
+            alert_relay_down=alert_relay_down,
+            alert_graph_test_failed=alert_graph_test_failed,
+            alert_disk_usage=alert_disk_usage,
+            alert_send_failures=alert_send_failures,
+            alert_failed_login_spike=alert_failed_login_spike,
+            alert_user_banned=alert_user_banned,
+            alert_admin_reset=alert_admin_reset,
+            alert_admin_password_change=alert_admin_password_change,
+            alert_smtp_password_change=alert_smtp_password_change,
+        )
+    except ValidationError as exc:
+        return await _render_notifications(
+            request, session, error=_first_error(exc)
+        )
+
+    async with session_scope() as s:
+        senders_enabled = {
+            r.address.lower()
+            for r in (
+                await s.scalars(
+                    select(AuthorisedSender).where(
+                        AuthorisedSender.is_enabled.is_(True)
+                    )
+                )
+            ).all()
+        }
+
+    if data.admin_email_from and data.admin_email_from not in senders_enabled:
+        return await _render_notifications(
+            request,
+            session,
+            error=(
+                f"From address '{data.admin_email_from}' must be one of "
+                "the enabled Authorised Senders."
+            ),
+        )
+
+    async with session_scope() as s:
+        row = await s.get(Settings, 1)
+        if row is None:
+            row = Settings(id=1)
+            s.add(row)
+        row.admin_email_to = data.admin_email_to or None
+        row.admin_email_from = data.admin_email_from or None
+        row.alert_secret_expiry_days = data.alert_secret_expiry_days
+        row.alert_daily_time = data.alert_daily_time
+        row.alert_secret_expiry = data.alert_secret_expiry
+        row.alert_dead_queue = data.alert_dead_queue
+        row.alert_relay_down = data.alert_relay_down
+        row.alert_graph_test_failed = data.alert_graph_test_failed
+        row.alert_disk_usage = data.alert_disk_usage
+        row.alert_send_failures = data.alert_send_failures
+        row.alert_failed_login_spike = data.alert_failed_login_spike
+        row.alert_user_banned = data.alert_user_banned
+        row.alert_admin_reset = data.alert_admin_reset
+        row.alert_admin_password_change = data.alert_admin_password_change
+        row.alert_smtp_password_change = data.alert_smtp_password_change
+
+        await audit_config_change(
+            s, session, request,
+            details={
+                "section": "notifications",
+                "admin_email_to": data.admin_email_to or None,
+                "admin_email_from": data.admin_email_from or None,
+                "daily_time": data.alert_daily_time,
+            },
+        )
+    return RedirectResponse("/config/notifications?saved=1", status_code=303)
+
+
+@router.post(
+    "/notifications/test",
+    include_in_schema=False,
+    dependencies=[Depends(require_csrf), Depends(require_user)],
+)
+async def notifications_test(
+    request: Request,
+    session: SessionPayload = Depends(require_user),
+):
+    ok, why = await admin_alerts.send_test_alert()
+    qs = "tested=ok" if ok else f"tested=fail&why={(why or '').replace(' ', '+')[:200]}"
+    return RedirectResponse(f"/config/notifications?{qs}", status_code=303)
+
+
+async def _render_notifications(request, session, *, error: str):
+    async with session_scope() as s:
+        row = await s.get(Settings, 1)
+        senders = (
+            await s.scalars(
+                select(AuthorisedSender)
+                .where(AuthorisedSender.is_enabled.is_(True))
+                .order_by(AuthorisedSender.address)
+            )
+        ).all()
+    return render(
+        request,
+        "config_notifications.html",
+        {
+            "session": session,
+            "row": row,
+            "senders": senders,
+            "error": error,
+            "flash": None,
+        },
+        status_code=400,
+    )
 
 
 # =============================================================================

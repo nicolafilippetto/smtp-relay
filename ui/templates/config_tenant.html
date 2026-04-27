@@ -23,6 +23,23 @@
     </p>
   {% endif %}
 
+  {# Secret-expiry indicator (same style as dashboard alerts) #}
+  {% if cfg and cfg.secret_expires_at %}
+    {% set days = (cfg.secret_expires_at - today).days %}
+    {% if days < 0 %}
+      <p class="alert alert-err">
+        ❌ Secret expiry date passed {{ -days }} day(s) ago
+        ({{ cfg.secret_expires_at }}). Verify the date or rotate the secret.
+      </p>
+    {% elif days == 0 %}
+      <p class="alert alert-err">⚠ Secret expires today ({{ cfg.secret_expires_at }}).</p>
+    {% elif days <= 14 %}
+      <p class="alert alert-warn">⚠ Secret expires in {{ days }} day(s) ({{ cfg.secret_expires_at }}).</p>
+    {% else %}
+      <p class="alert alert-info">Secret expires in {{ days }} day(s) ({{ cfg.secret_expires_at }}).</p>
+    {% endif %}
+  {% endif %}
+
   <form method="post" action="/config/tenant" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
@@ -44,6 +61,35 @@
              placeholder="{% if has_secret %}•••••• (leave empty to keep the existing secret){% else %}Enter a new client secret{% endif %}"
              autocomplete="new-password">
     </label>
+
+    <fieldset>
+      <legend>Client secret expiry</legend>
+      <div class="grid grid-2">
+        <label>
+          Expiry date (optional)
+          <input type="date" name="secret_expires_at"
+                 value="{{ cfg.secret_expires_at.isoformat() if cfg and cfg.secret_expires_at else '' }}">
+        </label>
+        <label class="check">
+          <input type="checkbox" name="clear_secret_expires_at" value="1">
+          Clear the saved expiry date
+        </label>
+      </div>
+      <p class="small muted">
+        When set, the system will email an alert to the configured admin
+        each day starting from the configured warning window until you
+        update the secret and the date.
+      </p>
+
+      <label class="check">
+        <input type="checkbox" name="expiry_verified" value="1">
+        I have verified the secret expiry date
+      </label>
+      <p class="small muted">
+        Required only when you submit a <strong>new client secret</strong> —
+        confirms the expiry date above reflects the new secret.
+      </p>
+    </fieldset>
 
     <div class="row-actions">
       <button type="submit" class="btn btn-primary">Save</button>
