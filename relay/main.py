@@ -27,7 +27,7 @@ from aiosmtpd.controller import Controller
 from sqlalchemy import delete, select
 from sqlalchemy.exc import OperationalError
 
-from common import archive
+from common import admin_alerts, archive
 from common.bans import prune_expired_bans, prune_old_attempts
 from common.db import dispose_engine, enable_sqlite_wal, get_engine, session_scope
 from common.models import (
@@ -135,6 +135,38 @@ async def _heartbeat_loop(started_at: _dt.datetime, stop: asyncio.Event) -> None
                     hb.status = "running"
         except Exception as exc:
             _log.warning("heartbeat update failed: %s", exc)
+        with suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+
+
+async def _alert_loop(stop: asyncio.Event) -> None:
+    """Tick every 60s.
+
+    On each tick we run the realtime scanner; once per day at the
+    configured time the digest is also sent. Both helpers update their
+    own watermarks in the DB.
+    """
+    interval = 60.0
+
+    # Initialise the realtime watermark to "now" so we don't fire alerts
+    # on historical audit rows the first time the relay starts.
+    try:
+        async with session_scope() as session:
+            settings = await session.scalar(
+                select(Settings).where(Settings.id == 1)
+            )
+            if settings is not None and settings.alert_last_realtime_scan_at is None:
+                settings.alert_last_realtime_scan_at = _utcnow()
+    except Exception as exc:  # pragma: no cover - defensive
+        _log.warning("alert loop init failed: %s", exc)
+
+    while not stop.is_set():
+        try:
+            now = _utcnow()
+            await admin_alerts.dispatch_realtime(now)
+            await admin_alerts.dispatch_digest(now)
+        except Exception as exc:  # pragma: no cover - defensive
+            _log.exception("alert loop tick failed: %s", exc)
         with suppress(asyncio.TimeoutError):
             await asyncio.wait_for(stop.wait(), timeout=interval)
 
@@ -250,6 +282,7 @@ async def _run() -> None:
     worker.start()
     hb_task = asyncio.create_task(_heartbeat_loop(started_at, stop), name="heartbeat")
     prune_task = asyncio.create_task(_pruner_loop(stop), name="pruner")
+    alert_task = asyncio.create_task(_alert_loop(stop), name="alerts")
 
     # Signal handling.
     loop = asyncio.get_running_loop()
@@ -272,7 +305,8 @@ async def _run() -> None:
         await worker.stop()
         hb_task.cancel()
         prune_task.cancel()
-        for t in (hb_task, prune_task):
+        alert_task.cancel()
+        for t in (hb_task, prune_task, alert_task):
             with suppress(Exception):
                 await t
         await dispose_engine()

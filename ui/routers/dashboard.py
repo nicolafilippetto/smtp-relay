@@ -197,6 +197,10 @@ async def dashboard(
             }
         )
 
+    expiry_alert = _secret_expiry_alert(tenant, settings, now.date())
+    if expiry_alert:
+        alerts.append(expiry_alert)
+
     return render(
         request,
         "dashboard.html",
@@ -233,6 +237,44 @@ def _token_warning(tenant: TenantConfig | None, now: _dt.datetime) -> str | None
     if expires - now <= _dt.timedelta(hours=24):
         return "Last known Graph token expires within 24 hours."
     return None
+
+
+def _secret_expiry_alert(
+    tenant: TenantConfig | None,
+    settings: Settings | None,
+    today: _dt.date,
+) -> dict[str, str] | None:
+    """Mirror the digest-section logic so the dashboard shows the same state."""
+    if tenant is None or tenant.secret_expires_at is None:
+        return None
+    threshold = settings.alert_secret_expiry_days if settings else 30
+    days = (tenant.secret_expires_at - today).days
+    if days > threshold:
+        return None
+    if days < 0:
+        return {
+            "level": "err",
+            "message": (
+                f"Azure AD client secret expiry date passed {-days} day(s) ago "
+                f"({tenant.secret_expires_at.isoformat()}). "
+                f"Verify the date or rotate the secret."
+            ),
+        }
+    if days == 0:
+        return {
+            "level": "err",
+            "message": (
+                f"Azure AD client secret expires TODAY "
+                f"({tenant.secret_expires_at.isoformat()})."
+            ),
+        }
+    return {
+        "level": "warn",
+        "message": (
+            f"Azure AD client secret expires in {days} day(s) "
+            f"({tenant.secret_expires_at.isoformat()})."
+        ),
+    }
 
 
 def _volume_total_bytes(path: str) -> int:

@@ -17,6 +17,7 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     Enum as SAEnum,
     Index,
@@ -197,6 +198,12 @@ class TenantConfig(Base):
         DateTime, nullable=True
     )
 
+    # Operator-supplied expiry date of the Azure AD client secret.
+    # Optional. When set, drives the secret-expiry admin alert.
+    secret_expires_at: Mapped[Optional[_dt.date]] = mapped_column(
+        Date, nullable=True
+    )
+
     updated_at: Mapped[_dt.datetime] = mapped_column(
         DateTime, nullable=False, default=_utcnow, onupdate=_utcnow
     )
@@ -261,6 +268,70 @@ class Settings(Base):
     )
     rate_limit_window_sec: Mapped[int] = mapped_column(
         Integer, nullable=False, default=60
+    )
+
+    # ---------------------------------------------------------------
+    # Admin notifications
+    # ---------------------------------------------------------------
+    # Recipient + sender for alert mails. Sender must be an enabled
+    # AuthorisedSender, otherwise Graph will reject the send.
+    admin_email_to: Mapped[Optional[str]] = mapped_column(
+        String(320), nullable=True
+    )
+    admin_email_from: Mapped[Optional[str]] = mapped_column(
+        String(320), nullable=True
+    )
+
+    # Tunables for the digest scheduler.
+    alert_secret_expiry_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=30
+    )
+    # HH:MM (24h, UTC). Default 09:00.
+    alert_daily_time: Mapped[str] = mapped_column(
+        String(5), nullable=False, default="09:00"
+    )
+
+    # Per-type toggles.
+    alert_secret_expiry: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    alert_dead_queue: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    alert_relay_down: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    alert_graph_test_failed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    alert_disk_usage: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    alert_send_failures: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    alert_failed_login_spike: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    alert_user_banned: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    alert_admin_reset: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    alert_admin_password_change: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    alert_smtp_password_change: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+
+    # Bookkeeping for the dispatcher loop.
+    alert_last_realtime_scan_at: Mapped[Optional[_dt.datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+    alert_last_digest_at: Mapped[Optional[_dt.date]] = mapped_column(
+        Date, nullable=True
     )
 
     updated_at: Mapped[_dt.datetime] = mapped_column(
