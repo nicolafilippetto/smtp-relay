@@ -527,7 +527,7 @@ async def password_submit(
             outcome=AuditOutcome.SUCCESS,
             username=session.username,
             source_ip=_client_ip(request),
-            details={"event": "password_change"},
+            details={"section": "account", "action": "change_password"},
         )
     return RedirectResponse("/account?saved=1", status_code=303)
 
