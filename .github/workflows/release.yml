@@ -1,0 +1,91 @@
+name: Create Release
+
+on:
+  push:
+    branches: ["main"]
+    paths: ["RELEASE"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Read version
+        id: v
+        run: |
+          RAW=$(cat RELEASE | tr -d '[:space:]')
+          [[ "$RAW" == v* ]] && TAG="$RAW" || TAG="v$RAW"
+          SEM="${TAG#v}"
+          MAJOR_MINOR="${SEM%.*}"
+          MAJOR="${SEM%%.*}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "sem=${SEM}" >> $GITHUB_OUTPUT
+          echo "major_minor=${MAJOR_MINOR}" >> $GITHUB_OUTPUT
+          echo "major=${MAJOR}" >> $GITHUB_OUTPUT
+
+      - name: Create and push git tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a ${{ steps.v.outputs.tag }} -m "Release ${{ steps.v.outputs.tag }}"
+          git push origin ${{ steps.v.outputs.tag }}
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build e Push relay
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: relay/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/relay:${{ steps.v.outputs.sem }}
+            ghcr.io/${{ github.repository }}/relay:${{ steps.v.outputs.major_minor }}
+            ghcr.io/${{ github.repository }}/relay:${{ steps.v.outputs.major }}
+            ghcr.io/${{ github.repository }}/relay:latest
+
+      - name: Build e Push ui
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ui/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/ui:${{ steps.v.outputs.sem }}
+            ghcr.io/${{ github.repository }}/ui:${{ steps.v.outputs.major_minor }}
+            ghcr.io/${{ github.repository }}/ui:${{ steps.v.outputs.major }}
+            ghcr.io/${{ github.repository }}/ui:latest
+
+      - name: Build e Push nginx
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: nginx/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/nginx:${{ steps.v.outputs.sem }}
+            ghcr.io/${{ github.repository }}/nginx:${{ steps.v.outputs.major_minor }}
+            ghcr.io/${{ github.repository }}/nginx:${{ steps.v.outputs.major }}
+            ghcr.io/${{ github.repository }}/nginx:latest
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ steps.v.outputs.tag }} \
+            --title "Release ${{ steps.v.outputs.tag }}" \
+            --generate-notes \
+            --latest
