@@ -14,7 +14,7 @@ pydantic-settings==2.14.0
 
 # Form / multipart parsing for FastAPI (required for OAuth2PasswordRequestForm
 # and generic <form> POST handling).
-python-multipart==0.0.20
+python-multipart==0.0.26
 
 # Templating + signed cookies + CSRF-capable HMAC signing.
 jinja2==3.1.6
