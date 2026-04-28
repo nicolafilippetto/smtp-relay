@@ -46,8 +46,9 @@ class AdminNotificationsIn(BaseModel):
     """Settings → Notifications page form."""
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    admin_email_to: str = ""
+    admin_email_from_name: str = ""
     admin_email_from: str = ""
+    admin_email_to: str = ""
     alert_secret_expiry_days: int = Field(ge=1, le=365, default=30)
     alert_daily_time: str = "09:00"
 
@@ -80,6 +81,17 @@ class AdminNotificationsIn(BaseModel):
         if not _HHMM_RE.match(v):
             raise ValueError("Time must be in HH:MM 24h format (UTC).")
         return v
+
+    @field_validator("admin_email_from_name")
+    @classmethod
+    def _valid_display_name(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            return ""
+        # Reject CR/LF (header injection) and newlines.
+        if any(c in v for c in "\r\n"):
+            raise ValueError("Sender name cannot contain newlines.")
+        return v[:128]
 
 
 class SettingsIn(BaseModel):
@@ -196,8 +208,9 @@ def tenant_form(
 
 
 def notifications_form(
-    admin_email_to: str = Form(""),
+    admin_email_from_name: str = Form(""),
     admin_email_from: str = Form(""),
+    admin_email_to: str = Form(""),
     alert_secret_expiry_days: int = Form(30),
     alert_daily_time: str = Form("09:00"),
     alert_secret_expiry: bool = Form(False),
@@ -213,8 +226,9 @@ def notifications_form(
     alert_smtp_password_change: bool = Form(False),
 ) -> AdminNotificationsIn:
     return AdminNotificationsIn(
-        admin_email_to=admin_email_to,
+        admin_email_from_name=admin_email_from_name,
         admin_email_from=admin_email_from,
+        admin_email_to=admin_email_to,
         alert_secret_expiry_days=alert_secret_expiry_days,
         alert_daily_time=alert_daily_time,
         alert_secret_expiry=alert_secret_expiry,

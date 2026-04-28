@@ -30,11 +30,15 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
     <fieldset>
-      <legend>Recipients</legend>
+      <legend>Sender &amp; recipient</legend>
       <label>
-        Recipient email (To)
-        <input type="email" name="admin_email_to" maxlength="320"
-               value="{{ row.admin_email_to or '' if row else '' }}">
+        Sender display name
+        <input type="text" name="admin_email_from_name" maxlength="128"
+               placeholder="e.g. smtp-relay alerts"
+               value="{{ row.admin_email_from_name or '' if row else '' }}">
+        <span class="small muted">
+          Optional. Shown to the recipient as <code>Name &lt;email&gt;</code>.
+        </span>
       </label>
       <label>
         Sender email (From)
@@ -52,6 +56,11 @@
           {% endif %}
         </span>
       </label>
+      <label>
+        Recipient email (To)
+        <input type="email" name="admin_email_to" maxlength="320"
+               value="{{ row.admin_email_to or '' if row else '' }}">
+      </label>
     </fieldset>
 
     <fieldset>
@@ -63,8 +72,10 @@
                  value="{{ row.alert_secret_expiry_days if row else 30 }}">
         </label>
         <label>
-          Daily digest time (HH:MM, UTC)
-          <input type="time" name="alert_daily_time"
+          Daily digest time (HH:mm, UTC)
+          <input type="text" name="alert_daily_time"
+                 maxlength="5" placeholder="HH:mm"
+                 pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$"
                  value="{{ row.alert_daily_time if row else '09:00' }}">
         </label>
       </div>
