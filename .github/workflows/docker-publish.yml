@@ -23,15 +23,47 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Metadata relay
+        id: meta-relay
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/relay
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Metadata ui
+        id: meta-ui
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/ui
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Metadata nginx
+        id: meta-nginx
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/nginx
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
       - name: Build e Push relay
         uses: docker/build-push-action@v6
         with:
           context: .
           file: relay/Dockerfile
           push: true
-          tags: |
-            ghcr.io/${{ github.repository }}/relay:latest
-            ghcr.io/${{ github.repository }}/relay:${{ github.sha }}
+          tags: ${{ steps.meta-relay.outputs.tags }}
+          labels: ${{ steps.meta-relay.outputs.labels }}
 
       - name: Build e Push ui
         uses: docker/build-push-action@v6
@@ -39,9 +71,8 @@ jobs:
           context: .
           file: ui/Dockerfile
           push: true
-          tags: |
-            ghcr.io/${{ github.repository }}/ui:latest
-            ghcr.io/${{ github.repository }}/ui:${{ github.sha }}
+          tags: ${{ steps.meta-ui.outputs.tags }}
+          labels: ${{ steps.meta-ui.outputs.labels }}
 
       - name: Build e Push nginx
         uses: docker/build-push-action@v6
@@ -49,6 +80,5 @@ jobs:
           context: .
           file: nginx/Dockerfile
           push: true
-          tags: |
-            ghcr.io/${{ github.repository }}/nginx:latest
-            ghcr.io/${{ github.repository }}/nginx:${{ github.sha }}
+          tags: ${{ steps.meta-nginx.outputs.tags }}
+          labels: ${{ steps.meta-nginx.outputs.labels }}
