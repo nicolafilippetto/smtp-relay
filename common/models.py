@@ -281,6 +281,10 @@ class Settings(Base):
     admin_email_from: Mapped[Optional[str]] = mapped_column(
         String(320), nullable=True
     )
+    # Optional display name shown to the recipient as `Name <email>`.
+    admin_email_from_name: Mapped[Optional[str]] = mapped_column(
+        String(128), nullable=True
+    )
 
     # Tunables for the digest scheduler.
     alert_secret_expiry_days: Mapped[int] = mapped_column(

@@ -27,11 +27,13 @@ from __future__ import annotations
 
 import asyncio
 import datetime as _dt
+import html as _html
 import json
 import logging
 import re
 from dataclasses import dataclass
 from email.message import EmailMessage
+from email.utils import formataddr
 
 from sqlalchemy import func, select
 
@@ -65,6 +67,10 @@ class DigestSection:
     title: str
     body: str
     severity: str  # "info" | "warn" | "err"
+    # Optional secondary line shown under the title in the HTML render
+    # (e.g. timestamp + actor for real-time events). Plain-text rendering
+    # places it on its own line below the title.
+    meta: str | None = None
 
 
 def _utcnow() -> _dt.datetime:
@@ -322,15 +328,18 @@ def _parse_details(blob: str | None) -> dict:
         return {}
 
 
-def realtime_summary(events: list[tuple[AuditLog, str]]) -> tuple[str, str]:
-    """Build (subject, body) for a real-time alert email."""
-    if len(events) == 1:
-        row, kind = events[0]
-        subj = f"[smtp-relay] {_kind_title(kind)}"
-        return subj, _render_event(row, kind)
-    subj = f"[smtp-relay] {len(events)} new alert event(s)"
-    parts = [_render_event(r, k) for r, k in events]
-    return subj, "\n\n".join(parts) + "\n"
+def realtime_summary(
+    events: list[tuple[AuditLog, str]],
+) -> tuple[str, str, list[DigestSection]]:
+    """Build (subject, category, sections) for a real-time alert email."""
+    sections = [_event_section(row, kind) for row, kind in events]
+    if len(sections) == 1:
+        subject = f"[smtp-relay] {sections[0].title}"
+        category = "Real-time alert"
+    else:
+        subject = f"[smtp-relay] {len(sections)} alert event(s)"
+        category = "Real-time alerts"
+    return subject, category, sections
 
 
 def _kind_title(kind: str) -> str:
@@ -342,16 +351,23 @@ def _kind_title(kind: str) -> str:
     }.get(kind, kind)
 
 
-def _render_event(row: AuditLog, kind: str) -> str:
+def _event_severity(kind: str) -> str:
+    # admin_reset is the strongest security signal of the lot; bans
+    # and password changes are warnings-by-default.
+    if kind == "admin_reset":
+        return "err"
+    return "warn"
+
+
+def _event_section(row: AuditLog, kind: str) -> DigestSection:
     details = _parse_details(row.details_json)
-    when = row.timestamp.isoformat()
-    head = f"[{when} UTC] {_kind_title(kind)}"
+    when = row.timestamp.strftime("%Y-%m-%d %H:%M:%S")
     src = []
     if row.username:
         src.append(f"by {row.username}")
     if row.source_ip:
         src.append(f"from {row.source_ip}")
-    src_line = " ".join(src) if src else ""
+    meta = f"{when} UTC" + (" · " + " ".join(src) if src else "")
 
     if kind == "user_ban":
         # The audit detail shape varies (relay vs UI auth); cover both.
@@ -372,9 +388,9 @@ def _render_event(row: AuditLog, kind: str) -> str:
         body += "."
     elif kind == "admin_reset":
         body = (
-            "An ADMIN_RESET was applied via environment variables on relay/UI "
-            "startup. If you did not initiate this reset, treat it as a "
-            "security incident."
+            "An ADMIN_RESET was applied via environment variables on "
+            "relay/UI startup. If you did not initiate this reset, treat "
+            "it as a security incident."
         )
     elif kind == "admin_password_change":
         target = details.get("target_username") or "(self)"
@@ -385,9 +401,12 @@ def _render_event(row: AuditLog, kind: str) -> str:
     else:
         body = row.details_json or ""
 
-    if src_line:
-        body = f"{body}\n({src_line})"
-    return f"{head}\n{body}"
+    return DigestSection(
+        title=_kind_title(kind),
+        body=body,
+        severity=_event_severity(kind),
+        meta=meta,
+    )
 
 
 # =============================================================================
@@ -435,19 +454,138 @@ async def _audit_send_failure(reason: str) -> None:
         )
 
 
+# -----------------------------------------------------------------------------
+# Mail rendering
+# -----------------------------------------------------------------------------
+
+_SEVERITY_COLOR = {
+    "info": "#0969da",
+    "warn": "#bf8700",
+    "err": "#cf222e",
+}
+_SEVERITY_BG = {
+    "info": "#ddf4ff",
+    "warn": "#fff8c5",
+    "err": "#ffebe9",
+}
+_SEVERITY_LABEL = {
+    "info": "INFO",
+    "warn": "WARNING",
+    "err": "ALERT",
+}
+
+
+def _render_text(category: str, sections: list[DigestSection], now: _dt.datetime) -> str:
+    """Plain-text body — used as the fallback alternative."""
+    lines: list[str] = [f"smtp-relay · {category}", "=" * 60, ""]
+    for sec in sections:
+        lines.append(f"[{_SEVERITY_LABEL.get(sec.severity, sec.severity.upper())}] {sec.title}")
+        if sec.meta:
+            lines.append(sec.meta)
+        lines.append("-" * 60)
+        lines.append(sec.body.rstrip())
+        lines.append("")
+    lines.append(f"Sent at {now.strftime('%Y-%m-%d %H:%M:%S')} UTC by smtp-relay")
+    return "\n".join(lines) + "\n"
+
+
+def _render_html(category: str, sections: list[DigestSection], now: _dt.datetime) -> str:
+    """HTML body — inline styles, table-based layout for mail-client compat."""
+    rows: list[str] = []
+    for i, sec in enumerate(sections):
+        color = _SEVERITY_COLOR.get(sec.severity, "#656d76")
+        bg = _SEVERITY_BG.get(sec.severity, "#f6f8fa")
+        label = _SEVERITY_LABEL.get(sec.severity, sec.severity.upper())
+        border_top = (
+            "border-top:1px solid #d0d7de;"
+            if i > 0 else ""
+        )
+        meta_html = (
+            f'<div style="font-size:12px;color:#656d76;margin:0 0 10px;">'
+            f"{_html.escape(sec.meta)}</div>"
+            if sec.meta else ""
+        )
+        body_html = _html.escape(sec.body.rstrip()).replace("\n", "<br>")
+        rows.append(
+            f"""
+            <tr><td style="padding:18px 24px;{border_top}">
+              <div style="display:inline-block;font-size:11px;font-weight:700;
+                          letter-spacing:.6px;color:{color};background:{bg};
+                          padding:2px 8px;border-radius:4px;margin-bottom:8px;">
+                {label}
+              </div>
+              <div style="font-size:16px;font-weight:600;color:#1f2328;
+                          margin:0 0 6px;">{_html.escape(sec.title)}</div>
+              {meta_html}
+              <div style="font-size:14px;line-height:1.55;color:#1f2328;">
+                {body_html}
+              </div>
+            </td></tr>
+            """.strip()
+        )
+
+    return f"""<!doctype html>
+<html><body style="margin:0;padding:0;background:#f6f8fa;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
+  Helvetica,Arial,sans-serif;color:#1f2328;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0"
+         style="background:#f6f8fa;padding:24px 12px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" border="0"
+             style="max-width:600px;background:#ffffff;border-radius:8px;
+                    overflow:hidden;border:1px solid #d0d7de;">
+        <tr><td style="background:#1f2328;color:#ffffff;
+                       padding:16px 24px;font-size:13px;font-weight:600;
+                       letter-spacing:.5px;">
+          smtp-relay
+          <span style="opacity:.6;margin:0 6px;">·</span>
+          {_html.escape(category)}
+        </td></tr>
+        {''.join(rows)}
+        <tr><td style="background:#f6f8fa;color:#656d76;
+                       padding:12px 24px;font-size:11px;text-align:center;
+                       border-top:1px solid #d0d7de;">
+          Sent at {now.strftime('%Y-%m-%d %H:%M:%S')} UTC by smtp-relay
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+
+
+# -----------------------------------------------------------------------------
+# Sending
+# -----------------------------------------------------------------------------
+
+def _format_from(address: str, display_name: str | None) -> str:
+    """Return RFC 5322 From header value, with display name when set."""
+    name = (display_name or "").strip()
+    if not name:
+        return address
+    return formataddr((name, address))
+
+
 async def send_mail(
     *,
-    sender: str,
+    sender_addr: str,
+    sender_name: str | None,
     recipient: str,
     subject: str,
-    body: str,
+    category: str,
+    sections: list[DigestSection],
+    now: _dt.datetime | None = None,
 ) -> bool:
-    """Send a plain-text alert via Graph. Returns True on success."""
+    """Send a multipart (text + HTML) alert via Graph. Returns True on success."""
+    when = now or _utcnow()
+    text = _render_text(category, sections, when)
+    html = _render_html(category, sections, when)
+
     msg = EmailMessage()
-    msg["From"] = sender
+    msg["From"] = _format_from(sender_addr, sender_name)
     msg["To"] = recipient
     msg["Subject"] = subject
-    msg.set_content(body)
+    msg.set_content(text)
+    msg.add_alternative(html, subtype="html")
     raw = msg.as_bytes()
 
     client = await _build_graph_client()
@@ -455,7 +593,9 @@ async def send_mail(
         await _audit_send_failure("Tenant configuration is incomplete.")
         return False
     try:
-        await asyncio.to_thread(client.send_mime, sender, raw)
+        # Graph's sendMail uses the bare address as the path segment;
+        # the display name only lives in the MIME header.
+        await asyncio.to_thread(client.send_mime, sender_addr, raw)
         return True
     except GraphError as exc:
         _log.warning("Admin alert send failed: %s", exc)
@@ -509,12 +649,15 @@ async def dispatch_realtime(now: _dt.datetime) -> int:
         return 0
 
     settings = await _reload_settings()
-    subject, body = realtime_summary(events)
+    subject, category, sections = realtime_summary(events)
     await send_mail(
-        sender=settings.admin_email_from,
+        sender_addr=settings.admin_email_from,
+        sender_name=settings.admin_email_from_name,
         recipient=settings.admin_email_to,
         subject=subject,
-        body=body,
+        category=category,
+        sections=sections,
+        now=now,
     )
     return len(events)
 
@@ -553,14 +696,14 @@ async def dispatch_digest(now: _dt.datetime) -> bool:
         return False
 
     subject = f"[smtp-relay] Daily alert digest — {len(sections)} item(s)"
-    body = "\n\n".join(
-        f"## {sec.title}\n{sec.body}" for sec in sections
-    )
     return await send_mail(
-        sender=settings.admin_email_from,
+        sender_addr=settings.admin_email_from,
+        sender_name=settings.admin_email_from_name,
         recipient=settings.admin_email_to,
         subject=subject,
-        body=body,
+        category="Daily digest",
+        sections=sections,
+        now=now,
     )
 
 
@@ -639,15 +782,23 @@ async def send_test_alert() -> tuple[bool, str | None]:
     ok, why = await can_send(settings)
     if not ok:
         return False, why
+    sample = DigestSection(
+        title="Test alert",
+        body=(
+            "This is a test alert from the smtp-relay UI. If you "
+            "received this mail, admin notifications are wired up "
+            "correctly."
+        ),
+        severity="info",
+        meta="Triggered manually from /config/notifications",
+    )
     sent = await send_mail(
-        sender=settings.admin_email_from,
+        sender_addr=settings.admin_email_from,
+        sender_name=settings.admin_email_from_name,
         recipient=settings.admin_email_to,
         subject="[smtp-relay] Test alert",
-        body=(
-            "This is a test alert from the smtp-relay UI.\n\n"
-            "If you received this mail, admin notifications are wired up "
-            "correctly.\n"
-        ),
+        category="Test",
+        sections=[sample],
     )
     if sent:
         return True, None

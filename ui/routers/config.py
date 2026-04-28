@@ -714,8 +714,9 @@ async def notifications_view(
 )
 async def notifications_save(
     request: Request,
-    admin_email_to: str = Form(""),
+    admin_email_from_name: str = Form(""),
     admin_email_from: str = Form(""),
+    admin_email_to: str = Form(""),
     alert_secret_expiry_days: int = Form(30),
     alert_daily_time: str = Form("09:00"),
     alert_secret_expiry: bool = Form(False),
@@ -733,8 +734,9 @@ async def notifications_save(
 ):
     try:
         data: AdminNotificationsIn = notifications_form(
-            admin_email_to=admin_email_to,
+            admin_email_from_name=admin_email_from_name,
             admin_email_from=admin_email_from,
+            admin_email_to=admin_email_to,
             alert_secret_expiry_days=alert_secret_expiry_days,
             alert_daily_time=alert_daily_time,
             alert_secret_expiry=alert_secret_expiry,
@@ -781,8 +783,9 @@ async def notifications_save(
         if row is None:
             row = Settings(id=1)
             s.add(row)
-        row.admin_email_to = data.admin_email_to or None
+        row.admin_email_from_name = data.admin_email_from_name or None
         row.admin_email_from = data.admin_email_from or None
+        row.admin_email_to = data.admin_email_to or None
         row.alert_secret_expiry_days = data.alert_secret_expiry_days
         row.alert_daily_time = data.alert_daily_time
         row.alert_secret_expiry = data.alert_secret_expiry
@@ -801,8 +804,9 @@ async def notifications_save(
             s, session, request,
             details={
                 "section": "notifications",
-                "admin_email_to": data.admin_email_to or None,
+                "admin_email_from_name": data.admin_email_from_name or None,
                 "admin_email_from": data.admin_email_from or None,
+                "admin_email_to": data.admin_email_to or None,
                 "daily_time": data.alert_daily_time,
             },
         )
