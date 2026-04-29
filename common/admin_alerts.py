@@ -32,6 +32,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+import email.policy
 from email.message import EmailMessage
 from email.utils import formataddr
 
@@ -586,7 +587,7 @@ async def send_mail(
     msg["Subject"] = subject
     msg.set_content(text)
     msg.add_alternative(html, subtype="html")
-    raw = msg.as_bytes()
+    raw = msg.as_bytes(policy=email.policy.SMTP)
 
     client = await _build_graph_client()
     if client is None:
