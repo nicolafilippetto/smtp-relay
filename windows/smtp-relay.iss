@@ -34,7 +34,6 @@ AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\smtp-relay
 DefaultGroupName={#MyAppName}
-DisableProgramGroupPage=yes
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#OutDir}
@@ -53,6 +52,25 @@ Name: "openpanel"; Description: "Open the admin panel after install"; Flags: che
 [Files]
 ; The entire staged payload, preserving the app\ subfolder layout.
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+
+[Icons]
+; Start-Menu group with day-to-day management shortcuts. The manage.ps1 script
+; self-elevates (UAC prompt) for the actions that need Administrator rights.
+Name: "{group}\SMTP Relay Admin Panel"; Filename: "{app}\panel.url"
+Name: "{group}\Start SMTP Relay"; Filename: "powershell.exe"; \
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action start"; \
+  WorkingDir: "{app}"
+Name: "{group}\Stop SMTP Relay"; Filename: "powershell.exe"; \
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action stop"; \
+  WorkingDir: "{app}"
+Name: "{group}\Restart SMTP Relay"; Filename: "powershell.exe"; \
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action restart"; \
+  WorkingDir: "{app}"
+Name: "{group}\SMTP Relay Status"; Filename: "powershell.exe"; \
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action status"; \
+  WorkingDir: "{app}"
+Name: "{group}\Data and Logs folder"; Filename: "{commonappdata}\smtp-relay"
+Name: "{group}\Uninstall SMTP Relay"; Filename: "{uninstallexe}"
 
 [Run]
 ; Configure services, keys, DB and firewall. Visible window so the operator can

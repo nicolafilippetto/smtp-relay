@@ -59,8 +59,14 @@ C:\ProgramData\smtp-relay\          <- your data (keep backed up, holds secrets)
 
 ## Manage the services
 
-Use **Services** (`services.msc`) — look for *SMTP Relay - Relay* and
-*SMTP Relay - Web UI* — or from an elevated PowerShell:
+The installer creates a **Start Menu group "SMTP Relay"** with shortcuts:
+*Admin Panel*, *Start / Stop / Restart SMTP Relay*, *SMTP Relay Status*,
+*Data and Logs folder*, and *Uninstall*. The start/stop/restart shortcuts ask
+for Administrator rights (UAC prompt) automatically.
+
+You can also use **Services** (`services.msc`) — look for *SMTP Relay - Relay*
+and *SMTP Relay - Web UI* (service names `smtp-relay-relay` and
+`smtp-relay-ui`) — or an elevated PowerShell:
 
 ```powershell
 Get-Service smtp-relay-*            # status
@@ -69,6 +75,14 @@ Restart-Service smtp-relay-relay   # restart the relay
 ```
 
 Both start automatically at boot and restart on failure.
+
+### Troubleshooting
+
+The installer writes a full log to `C:\ProgramData\smtp-relay\install-log.txt`.
+Each service also logs to `C:\ProgramData\smtp-relay\logs\relay\` and
+`...\logs\ui\`. If the panel shows `ERR_CONNECTION_REFUSED`, the UI service is
+not running — open *SMTP Relay Status* (or `Get-Service smtp-relay-*`) and check
+those logs.
 
 ---
 

@@ -9,13 +9,9 @@
   <arguments>relay</arguments>
   <workingdirectory>C:\ProgramData\smtp-relay</workingdirectory>
 
-  <!-- Run under a low-privilege per-service virtual account rather than
-       LocalSystem. install.ps1 grants this account write access to the data
-       directory only. -->
-  <serviceaccount>
-    <username>NT SERVICE\smtp-relay-relay</username>
-    <allowservicelogon>true</allowservicelogon>
-  </serviceaccount>
+  <!-- Runs as LocalSystem (WinSW default). This is the most reliable account
+       for unattended installs; data lives under C:\ProgramData which SYSTEM
+       can write. Hardening to a lower-privilege account can be done later. -->
 
   <startmode>Automatic</startmode>
   <onfailure action="restart" delay="10 sec"/>

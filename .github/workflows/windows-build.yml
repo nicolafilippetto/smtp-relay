@@ -75,6 +75,8 @@ jobs:
           Copy-Item "windows\smtp-relay-ui.xml"    "$stage\"
           Copy-Item "windows\install.ps1"          "$stage\"
           Copy-Item "windows\uninstall.ps1"        "$stage\"
+          Copy-Item "windows\manage.ps1"           "$stage\"
+          Copy-Item "windows\panel.url"            "$stage\"
           Copy-Item "windows\config.env.template"  "$stage\"
           Copy-Item "README-windows.md"            "$stage\"
 
