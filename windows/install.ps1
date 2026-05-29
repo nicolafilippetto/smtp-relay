@@ -8,17 +8,8 @@
     an existing install. It never overwrites an existing config.env, so the
     encryption keys and the database survive re-installs.
 
-    Everything is logged to <DataDir>\install-log.txt so a failed install can
-    be diagnosed afterwards.
-
-    Steps:
-      1. Stop/remove any existing services.
-      2. Create the data/log directory tree under C:\ProgramData\smtp-relay.
-      3. Create config.env (from template) and generate the secret keys — once.
-      4. Run database migrations and bootstrap the admin user.
-      5. Install both Windows services (LocalSystem account).
-      6. Add a firewall rule for the SMTP port (LAN only).
-      7. Start the services, verify they are running, print first-login details.
+    Everything is logged to <InstallDir>\install-log.txt (with a fallback to
+    %TEMP%) so a failed install can always be diagnosed afterwards.
 
 .PARAMETER InstallDir
     Directory holding this script, the WinSW service exes/XMLs and the app\
@@ -64,7 +55,16 @@ function Pause-IfInteractive {
     }
 }
 
-Assert-Admin
+# --- Start logging FIRST, before anything that can fail ----------------------
+# Primary log lives next to the install (the folder the operator can see);
+# fall back to %TEMP% if that is somehow not writable.
+$logFile = Join-Path $InstallDir 'install-log.txt'
+try {
+    Start-Transcript -Path $logFile -Force | Out-Null
+} catch {
+    $logFile = Join-Path $env:TEMP 'smtp-relay-install-log.txt'
+    Start-Transcript -Path $logFile -Force | Out-Null
+}
 
 $AppExe     = Join-Path $InstallDir 'app\smtp-relay.exe'
 $Template   = Join-Path $InstallDir 'config.env.template'
@@ -75,26 +75,26 @@ $Services = @(
     @{ Id = 'smtp-relay-ui';    Winsw = (Join-Path $InstallDir 'smtp-relay-ui.exe') }
 )
 
-# Make sure the data + log tree exists before we start the transcript there.
-foreach ($sub in @('data', 'data\archive', 'logs\relay', 'logs\ui')) {
-    New-Item -ItemType Directory -Force -Path (Join-Path $DataDir $sub) | Out-Null
-}
-
-$logFile = Join-Path $DataDir 'install-log.txt'
-Start-Transcript -Path $logFile -Force | Out-Null
-
 $tempPassword = $null
 try {
     Write-Host '== SMTP Relay installer ==' -ForegroundColor Cyan
     Write-Host "InstallDir: $InstallDir"
     Write-Host "DataDir:    $DataDir"
+    Write-Host "Log file:   $logFile"
+
+    Assert-Admin
 
     if (-not (Test-Path $AppExe))   { throw "Application executable not found at $AppExe" }
     foreach ($svc in $Services) {
         if (-not (Test-Path $svc.Winsw)) { throw "Service wrapper not found at $($svc.Winsw)" }
     }
 
-    # --- 1. Stop / remove existing services (idempotent) ---------------------
+    # --- 1. Data directory tree ----------------------------------------------
+    foreach ($sub in @('data', 'data\archive', 'logs\relay', 'logs\ui')) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $DataDir $sub) | Out-Null
+    }
+
+    # --- 2. Stop / remove existing services (idempotent) ---------------------
     foreach ($svc in $Services) {
         if (Get-Service -Name $svc.Id -ErrorAction SilentlyContinue) {
             Write-Host "Removing existing service $($svc.Id)..."
@@ -104,7 +104,7 @@ try {
         }
     }
 
-    # --- 2. config.env + key generation (only on first install) --------------
+    # --- 3. config.env + key generation (only on first install) --------------
     if (-not (Test-Path $ConfigPath)) {
         Write-Host 'Creating config.env and generating secret keys...'
         Copy-Item $Template $ConfigPath
@@ -121,7 +121,7 @@ try {
         Write-Host 'Existing config.env found — keeping current keys.'
     }
 
-    # --- 3. Migrate + bootstrap ----------------------------------------------
+    # --- 4. Migrate + bootstrap ----------------------------------------------
     Write-Host 'Applying database migrations and bootstrapping admin user...'
     $migrateOutput = & $AppExe migrate 2>&1
     $migrateOutput | ForEach-Object { Write-Host "    $_" }
@@ -137,13 +137,13 @@ try {
         }
     }
 
-    # --- 4. Install services (LocalSystem) -----------------------------------
+    # --- 5. Install services (LocalSystem) -----------------------------------
     foreach ($svc in $Services) {
         Write-Host "Installing service $($svc.Id)..."
         Invoke-Checked -Exe $svc.Winsw -Arguments @('install') -What "Service install ($($svc.Id))" | Out-Null
     }
 
-    # --- 5. Firewall rule (SMTP port, LAN only) ------------------------------
+    # --- 6. Firewall rule (SMTP port, LAN only) ------------------------------
     $smtpPort = 2525
     $ruleName = 'SMTP Relay (inbound 2525)'
     Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue |
@@ -153,7 +153,7 @@ try {
         -LocalPort $smtpPort -Action Allow -Profile Private,Domain | Out-Null
     # The web UI binds to 127.0.0.1 only, so it needs no firewall rule.
 
-    # --- 6. Start services + verify ------------------------------------------
+    # --- 7. Start services + verify ------------------------------------------
     foreach ($svc in $Services) {
         Write-Host "Starting service $($svc.Id)..."
         & $svc.Winsw start 2>&1 | ForEach-Object { Write-Host "    $_" }
@@ -201,13 +201,13 @@ try {
 }
 catch {
     Write-Host ''
-    Write-Host "== Installation FAILED ==" -ForegroundColor Red
+    Write-Host '== Installation FAILED ==' -ForegroundColor Red
     Write-Host $_.Exception.Message -ForegroundColor Red
     Write-Host "Full log: $logFile"
-    Stop-Transcript | Out-Null
+    try { Stop-Transcript | Out-Null } catch { }
     Pause-IfInteractive
     exit 1
 }
 
-Stop-Transcript | Out-Null
+try { Stop-Transcript | Out-Null } catch { }
 Pause-IfInteractive
