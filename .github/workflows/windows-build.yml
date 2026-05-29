@@ -80,7 +80,11 @@ jobs:
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           $stageAbs = (Resolve-Path "staging").Path
-          & $iscc "/DMyAppVersion=${{ steps.version.outputs.version }}" "/DStageDir=$stageAbs" "/DOutDir=output" "windows\smtp-relay.iss"
+          # Absolute output dir: Inno Setup resolves a relative OutputDir against
+          # the .iss location (windows\), so pass an absolute path at the repo root.
+          $outAbs = Join-Path (Get-Location).Path "output"
+          New-Item -ItemType Directory -Force -Path $outAbs | Out-Null
+          & $iscc "/DMyAppVersion=${{ steps.version.outputs.version }}" "/DStageDir=$stageAbs" "/DOutDir=$outAbs" "windows\smtp-relay.iss"
 
       # --- Optional code signing (disabled until a certificate is provided) ---
       # Set the repository secrets CODE_SIGN_PFX_BASE64 and CODE_SIGN_PASSWORD
