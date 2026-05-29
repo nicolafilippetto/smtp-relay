@@ -1,0 +1,30 @@
+<service>
+  <id>smtp-relay-relay</id>
+  <name>SMTP Relay - Relay</name>
+  <description>Accepts SMTP on port 2525 and forwards mail to Microsoft 365 via the Graph API.</description>
+
+  <!-- %BASE% is the folder containing this WinSW exe (the install directory).
+       The application bundle lives in the app\ subfolder. -->
+  <executable>%BASE%\app\smtp-relay.exe</executable>
+  <arguments>relay</arguments>
+  <workingdirectory>C:\ProgramData\smtp-relay</workingdirectory>
+
+  <!-- Run under a low-privilege per-service virtual account rather than
+       LocalSystem. install.ps1 grants this account write access to the data
+       directory only. -->
+  <serviceaccount>
+    <username>NT SERVICE\smtp-relay-relay</username>
+    <allowservicelogon>true</allowservicelogon>
+  </serviceaccount>
+
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="10 sec"/>
+
+  <log mode="roll-by-size">
+    <logpath>C:\ProgramData\smtp-relay\logs\relay</logpath>
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+
+  <env name="LOG_LEVEL" value="INFO"/>
+</service>

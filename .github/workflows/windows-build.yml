@@ -1,0 +1,110 @@
+name: Windows build
+
+# Builds the native-Windows package: smtp-relay.exe (PyInstaller) wrapped into
+# smtp-relay-setup.exe (Inno Setup). This runs ONLY on a Windows runner — the
+# Docker images are built by separate Linux workflows and are unaffected.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+    paths:
+      - 'windows/**'
+      - 'common/**'
+      - 'relay/**'
+      - 'ui/**'
+      - '.github/workflows/windows-build.yml'
+
+permissions:
+  contents: write  # needed to attach the installer to a Release on tag builds
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    env:
+      WINSW_VERSION: v2.12.0
+      WINSW_URL: https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build dependencies
+        run: pip install -r windows/requirements.txt
+
+      - name: Build executable (PyInstaller)
+        run: pyinstaller --noconfirm windows/smtp-relay.spec
+
+      - name: Determine version
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $v = $env:GITHUB_REF -replace '^refs/tags/v', ''
+          } else {
+            $v = "0.0.0-dev.$env:GITHUB_RUN_NUMBER"
+          }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Package version: $v"
+
+      - name: Stage installer payload
+        shell: pwsh
+        run: |
+          $stage = "staging"
+          New-Item -ItemType Directory -Force -Path "$stage\app" | Out-Null
+          # PyInstaller onedir output -> app\
+          Copy-Item -Recurse -Force "dist\smtp-relay\*" "$stage\app\"
+          # WinSW: one renamed copy per service (exe basename must match the XML).
+          Invoke-WebRequest -Uri $env:WINSW_URL -OutFile "$stage\smtp-relay-relay.exe"
+          Copy-Item "$stage\smtp-relay-relay.exe" "$stage\smtp-relay-ui.exe"
+          # Service definitions, scripts, config template, docs.
+          Copy-Item "windows\smtp-relay-relay.xml" "$stage\"
+          Copy-Item "windows\smtp-relay-ui.xml"    "$stage\"
+          Copy-Item "windows\install.ps1"          "$stage\"
+          Copy-Item "windows\uninstall.ps1"        "$stage\"
+          Copy-Item "windows\config.env.template"  "$stage\"
+          Copy-Item "README-windows.md"            "$stage\"
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          $stageAbs = (Resolve-Path "staging").Path
+          & $iscc "/DMyAppVersion=${{ steps.version.outputs.version }}" "/DStageDir=$stageAbs" "/DOutDir=output" "windows\smtp-relay.iss"
+
+      # --- Optional code signing (disabled until a certificate is provided) ---
+      # Set the repository secrets CODE_SIGN_PFX_BASE64 and CODE_SIGN_PASSWORD
+      # to enable. Until then this step is skipped and the installer ships
+      # unsigned (Windows SmartScreen shows an "unknown publisher" prompt).
+      - name: Sign installer
+        if: ${{ env.CODE_SIGN_PFX_BASE64 != '' }}
+        env:
+          CODE_SIGN_PFX_BASE64: ${{ secrets.CODE_SIGN_PFX_BASE64 }}
+          CODE_SIGN_PASSWORD: ${{ secrets.CODE_SIGN_PASSWORD }}
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:CODE_SIGN_PFX_BASE64))
+          $signtool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1).FullName
+          & $signtool sign /f cert.pfx /p $env:CODE_SIGN_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "output\smtp-relay-setup.exe"
+          Remove-Item cert.pfx
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: smtp-relay-setup-${{ steps.version.outputs.version }}
+          path: output/smtp-relay-setup.exe
+
+      - name: Attach installer to Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: output/smtp-relay-setup.exe

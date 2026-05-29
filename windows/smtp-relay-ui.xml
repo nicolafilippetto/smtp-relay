@@ -1,0 +1,30 @@
+<service>
+  <id>smtp-relay-ui</id>
+  <name>SMTP Relay - Web UI</name>
+  <description>Admin web panel (uvicorn) served on http://127.0.0.1:8000 (localhost only).</description>
+
+  <!-- %BASE% is the folder containing this WinSW exe (the install directory).
+       The application bundle lives in the app\ subfolder. -->
+  <executable>%BASE%\app\smtp-relay.exe</executable>
+  <arguments>ui</arguments>
+  <workingdirectory>C:\ProgramData\smtp-relay</workingdirectory>
+
+  <!-- Run under a low-privilege per-service virtual account rather than
+       LocalSystem. install.ps1 grants this account write access to the data
+       directory only. -->
+  <serviceaccount>
+    <username>NT SERVICE\smtp-relay-ui</username>
+    <allowservicelogon>true</allowservicelogon>
+  </serviceaccount>
+
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="10 sec"/>
+
+  <log mode="roll-by-size">
+    <logpath>C:\ProgramData\smtp-relay\logs\ui</logpath>
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+
+  <env name="LOG_LEVEL" value="INFO"/>
+</service>
