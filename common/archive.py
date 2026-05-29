@@ -31,6 +31,15 @@ def _archive_root() -> Path:
     return Path(os.environ.get("ARCHIVE_PATH", "/data/archive"))
 
 
+def archive_root() -> Path:
+    """Public accessor for the archive root directory.
+
+    Used by disk-usage helpers that need a real, existing path on the
+    volume holding the archive (works on both POSIX and Windows).
+    """
+    return _archive_root()
+
+
 _SAFE_SUBJECT = re.compile(r"[^A-Za-z0-9._-]+")
 
 

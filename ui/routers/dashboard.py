@@ -67,11 +67,13 @@ def _classify_heartbeat(hb: RelayHeartbeat | None, now: _dt.datetime) -> RelaySt
             last_error=None,
         )
     # The relay writes a heartbeat every 10s; if we haven't seen one in
-    # 60s the relay is presumed down.
-    lag = (now - hb.last_seen_at).total_seconds()
+    # 60s the relay is presumed down. last_seen_at can briefly be NULL
+    # right after the relay creates its row but before the first tick.
     if hb.status == "error":
         state = "error"
-    elif lag > 60:
+    elif hb.last_seen_at is None:
+        state = "stopped"
+    elif (now - hb.last_seen_at).total_seconds() > 60:
         state = "stopped"
     else:
         state = "running"
@@ -150,7 +152,7 @@ async def dashboard(
     # Archive disk usage (bytes); we emit an alert over 80% of the
     # filesystem size of /data.
     disk_bytes = archive.archive_disk_usage_bytes()
-    disk_total = _volume_total_bytes("/data")
+    disk_total = _volume_total_bytes(str(archive.archive_root()))
     disk_pct = (disk_bytes / disk_total * 100) if disk_total else 0.0
 
     token_warn = _token_warning(tenant, now)
@@ -278,9 +280,14 @@ def _secret_expiry_alert(
 
 
 def _volume_total_bytes(path: str) -> int:
-    import os
+    """Total size (bytes) of the filesystem holding `path`.
+
+    Uses shutil.disk_usage so it works on both POSIX and Windows
+    (os.statvfs does not exist on Windows). Returns 0 if the path is not
+    accessible yet, in which case callers skip the capacity alert.
+    """
+    import shutil
     try:
-        s = os.statvfs(path)
-        return s.f_blocks * s.f_frsize
-    except OSError:
+        return shutil.disk_usage(path).total
+    except (OSError, ValueError):
         return 0

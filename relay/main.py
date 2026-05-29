@@ -118,7 +118,7 @@ async def _heartbeat_loop(started_at: _dt.datetime, stop: asyncio.Event) -> None
         hb = await session.get(RelayHeartbeat, 1)
         if hb is None:
             hb = RelayHeartbeat(
-                id=1, started_at=started_at, status="running"
+                id=1, started_at=started_at, last_seen_at=started_at, status="running"
             )
             session.add(hb)
         else:

@@ -194,7 +194,7 @@ async def _graph_test_failed_section(s) -> DigestSection | None:
 
 def _disk_usage_section() -> DigestSection | None:
     used = archive.archive_disk_usage_bytes()
-    total = _volume_total_bytes("/data")
+    total = _volume_total_bytes(str(archive.archive_root()))
     if not total:
         return None
     pct = used / total * 100
@@ -259,11 +259,15 @@ async def _failed_login_spike_section(s, now: _dt.datetime) -> DigestSection | N
 
 
 def _volume_total_bytes(path: str) -> int:
-    import os
+    """Total size (bytes) of the filesystem holding `path`.
+
+    Cross-platform (shutil.disk_usage); os.statvfs does not exist on
+    Windows. Returns 0 when the path is unavailable.
+    """
+    import shutil
     try:
-        st = os.statvfs(path)
-        return st.f_blocks * st.f_frsize
-    except OSError:
+        return shutil.disk_usage(path).total
+    except (OSError, ValueError):
         return 0
 
 
