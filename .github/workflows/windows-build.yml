@@ -24,6 +24,12 @@ on:
 permissions:
   contents: read
 
+# upload-artifact has no Node 24 release yet (it still ships on Node 20). This
+# opt-in, documented by GitHub, forces all JavaScript actions to run on Node 24
+# so the deprecation warning goes away and the workflow is future-proof.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: windows-latest
