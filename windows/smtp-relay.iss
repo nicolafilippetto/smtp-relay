@@ -54,7 +54,7 @@ Name: "{group}\Restart SMTP Relay"; Filename: "powershell.exe"; \
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action restart"; WorkingDir: "{app}"
 Name: "{group}\SMTP Relay Status"; Filename: "powershell.exe"; \
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action status"; WorkingDir: "{app}"
-Name: "{group}\Data and Logs folder"; Filename: "explorer.exe"; Parameters: '"{commonappdata}\smtp-relay"'
+Name: "{group}\Data and Logs folder"; Filename: "explorer.exe"; Parameters: "{commonappdata}\smtp-relay"
 Name: "{group}\Uninstall SMTP Relay"; Filename: "{uninstallexe}"
 
 ; --- CARTELLA DESKTOP ---
@@ -65,6 +65,7 @@ Name: "{autodesktop}\{#MyAppName}\Stop SMTP Relay"; Filename: "powershell.exe"; 
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action stop"; WorkingDir: "{app}"; Tasks: desktopfolder
 Name: "{autodesktop}\{#MyAppName}\SMTP Relay Status"; Filename: "powershell.exe"; \
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action status"; WorkingDir: "{app}"; Tasks: desktopfolder
+Name: "{group}\Data and Logs folder"; Filename: "explorer.exe"; Parameters: "{commonappdata}\smtp-relay"
 
 [UninstallDelete]
 ; Forza la rimozione della cartella sul desktop alla disinstallazione (se vuota)
