@@ -46,9 +46,6 @@ WizardStyle=modern
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
-[Tasks]
-Name: "openpanel"; Description: "Open the admin panel after install"; Flags: checkedonce
-
 [Files]
 ; The entire staged payload, preserving the app\ subfolder layout.
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
@@ -79,12 +76,49 @@ Filename: "powershell.exe"; \
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\install.ps1"" -InstallDir ""{app}"""; \
   StatusMsg: "Installing services and initialising the database..."; \
   Flags: waituntilterminated
-; Optionally open the panel in the default browser.
-Filename: "http://127.0.0.1:8000"; Flags: postinstall shellexec nowait skipifsilent; \
-  Description: "Open the admin panel"; Tasks: openpanel
+; Single finish-page checkbox to open the panel (asked once, at the end).
+Filename: "http://127.0.0.1:8000"; Description: "Open the admin panel now"; \
+  Flags: postinstall shellexec nowait skipifsilent
 
-[UninstallRun]
-Filename: "powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\uninstall.ps1"" -InstallDir ""{app}"""; \
-  Flags: runhidden waituntilterminated; \
-  RunOnceId: "RemoveSmtpRelayServices"
+[Code]
+{ Stop the services before files are copied, otherwise the running EXEs are
+  locked and a reinstall/upgrade fails. "net stop" is a clean stop (WinSW does
+  not treat it as a failure, so it won't auto-restart). Harmless if the
+  services do not exist yet (first install). }
+procedure StopRelayServices;
+var
+  rc: Integer;
+begin
+  Exec('net', 'stop smtp-relay-ui', '', SW_HIDE, ewWaitUntilTerminated, rc);
+  Exec('net', 'stop smtp-relay-relay', '', SW_HIDE, ewWaitUntilTerminated, rc);
+  Sleep(1500);  { give the wrapper processes a moment to release file handles }
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssInstall then
+    StopRelayServices;
+end;
+
+{ On uninstall, ask whether to also wipe the data directory (DB, archive,
+  config, keys), then run uninstall.ps1 accordingly. }
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  rc: Integer;
+  params: String;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    params := '-NoProfile -ExecutionPolicy Bypass -File "' +
+      ExpandConstant('{app}\uninstall.ps1') + '" -InstallDir "' +
+      ExpandConstant('{app}') + '"';
+    if MsgBox('Remove ALL SMTP Relay data too?' + #13#10#13#10 +
+              'This permanently deletes the database, the mail archive, the ' +
+              'configuration and the encryption keys in ' +
+              'C:\ProgramData\smtp-relay.' + #13#10#13#10 +
+              'Choose No to keep them for a future reinstall.',
+              mbConfirmation, MB_YESNO) = IDYES then
+      params := params + ' -RemoveData';
+    Exec('powershell.exe', params, '', SW_SHOW, ewWaitUntilTerminated, rc);
+  end;
+end;
