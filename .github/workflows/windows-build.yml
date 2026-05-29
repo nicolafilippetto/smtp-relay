@@ -33,10 +33,10 @@ jobs:
       WINSW_URL: https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -103,7 +103,7 @@ jobs:
           Remove-Item cert.pfx
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: smtp-relay-setup-${{ steps.version.outputs.version }}
           path: output/smtp-relay-setup.exe
