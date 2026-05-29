@@ -34,12 +34,27 @@ function Assert-Admin {
     }
 }
 
-# Run an external command and fail loudly if it returns a non-zero exit code.
-# ($ErrorActionPreference='Stop' does NOT catch native exe failures.)
+# Run a native exe, capturing stdout+stderr as text, WITHOUT letting its stderr
+# output trigger PowerShell's $ErrorActionPreference='Stop' terminating-error
+# behaviour. (Many tools — alembic, WinSW — log informational lines to stderr;
+# under 'Stop' that would otherwise abort the whole script.) The caller checks
+# $LASTEXITCODE for the real success/failure.
+function Invoke-Native {
+    param([string]$Exe, [string[]]$Arguments)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        return (& $Exe @Arguments 2>&1)
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+}
+
+# Like Invoke-Native but throws if the exit code is non-zero.
 function Invoke-Checked {
     param([string]$Exe, [string[]]$Arguments, [string]$What)
     Write-Host "  > $Exe $($Arguments -join ' ')"
-    $output = & $Exe @Arguments 2>&1
+    $output = Invoke-Native -Exe $Exe -Arguments $Arguments
     $output | ForEach-Object { Write-Host "    $_" }
     if ($LASTEXITCODE -ne 0) {
         throw "$What failed (exit code $LASTEXITCODE). See output above."
@@ -98,8 +113,8 @@ try {
     foreach ($svc in $Services) {
         if (Get-Service -Name $svc.Id -ErrorAction SilentlyContinue) {
             Write-Host "Removing existing service $($svc.Id)..."
-            & $svc.Winsw stop      2>&1 | ForEach-Object { Write-Host "    $_" }
-            & $svc.Winsw uninstall 2>&1 | ForEach-Object { Write-Host "    $_" }
+            Invoke-Native -Exe $svc.Winsw -Arguments @('stop')      | ForEach-Object { Write-Host "    $_" }
+            Invoke-Native -Exe $svc.Winsw -Arguments @('uninstall') | ForEach-Object { Write-Host "    $_" }
             Start-Sleep -Seconds 2
         }
     }
@@ -108,10 +123,10 @@ try {
     if (-not (Test-Path $ConfigPath)) {
         Write-Host 'Creating config.env and generating secret keys...'
         Copy-Item $Template $ConfigPath
-        $generated = & $AppExe genkey
+        $generated = Invoke-Native -Exe $AppExe -Arguments @('genkey')
         if ($LASTEXITCODE -ne 0) { throw 'genkey failed; cannot create config.env.' }
         foreach ($line in $generated) {
-            if ($line -match '^(ENCRYPTION_KEY|SECRET_KEY)=(.*)$') {
+            if ("$line" -match '^(ENCRYPTION_KEY|SECRET_KEY)=(.*)$') {
                 $name = $Matches[1]; $value = $Matches[2]
                 (Get-Content $ConfigPath) -replace "^$name=.*$", "$name=$value" |
                     Set-Content $ConfigPath -Encoding UTF8
@@ -123,14 +138,14 @@ try {
 
     # --- 4. Migrate + bootstrap ----------------------------------------------
     Write-Host 'Applying database migrations and bootstrapping admin user...'
-    $migrateOutput = & $AppExe migrate 2>&1
+    $migrateOutput = Invoke-Native -Exe $AppExe -Arguments @('migrate')
     $migrateOutput | ForEach-Object { Write-Host "    $_" }
     if ($LASTEXITCODE -ne 0) { throw 'Database migration / bootstrap failed.' }
 
     for ($i = 0; $i -lt $migrateOutput.Count; $i++) {
-        if ($migrateOutput[$i] -match 'temporary password') {
+        if ("$($migrateOutput[$i])" -match 'temporary password') {
             for ($j = $i + 1; $j -lt $migrateOutput.Count; $j++) {
-                $cand = ($migrateOutput[$j] -as [string]).Trim()
+                $cand = "$($migrateOutput[$j])".Trim()
                 if ($cand) { $tempPassword = $cand; break }
             }
             break
@@ -156,7 +171,7 @@ try {
     # --- 7. Start services + verify ------------------------------------------
     foreach ($svc in $Services) {
         Write-Host "Starting service $($svc.Id)..."
-        & $svc.Winsw start 2>&1 | ForEach-Object { Write-Host "    $_" }
+        Invoke-Native -Exe $svc.Winsw -Arguments @('start') | ForEach-Object { Write-Host "    $_" }
     }
     Start-Sleep -Seconds 3
 
