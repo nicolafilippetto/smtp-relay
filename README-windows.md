@@ -93,6 +93,11 @@ Each service also logs to `C:\ProgramData\smtp-relay\logs\relay\` and
 not running — open *SMTP Relay Status* (or `Get-Service smtp-relay-*`) and check
 those logs.
 
+Service logs **rotate automatically** (WinSW, roll-by-size): each `.out.log` /
+`.err.log` is capped at 10 MB and the 8 most recent files are kept, so they
+never grow without bound. These logs and `install-log.txt` live in the
+ACL-locked data directory, so opening them requires Administrator access.
+
 ---
 
 ## Configuration

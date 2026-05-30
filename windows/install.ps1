@@ -62,16 +62,32 @@ function Invoke-Checked {
     return $output
 }
 
-# --- Start logging FIRST, before anything that can fail ----------------------
-# Primary log lives next to the install (the folder the operator can see);
-# fall back to %TEMP% if that is somehow not writable.
-$logFile = Join-Path $InstallDir 'install-log.txt'
+# --- Create + lock the data dir, then start logging --------------------------
+# The log lives in the data directory (C:\ProgramData\smtp-relay\install-log.txt)
+# next to the service logs. We create and HARDEN that directory *before* opening
+# the transcript so install-log.txt — which can contain the one-time admin
+# password — inherits the SYSTEM/Administrators-only ACL from birth (a standard
+# user must never be able to read it). SIDs are used so it is language-neutral:
+#   S-1-5-18      = NT AUTHORITY\SYSTEM       (the services run as this)
+#   S-1-5-32-544  = BUILTIN\Administrators
+# /T fixes files left by a previous install; /C continues past per-file errors.
+try { New-Item -ItemType Directory -Force -Path $DataDir | Out-Null } catch { }
+Invoke-Native -Exe 'icacls' -Arguments @(
+    $DataDir, '/inheritance:r',
+    '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F',
+    '/T', '/C'
+) | Out-Null
+
+$logFile = Join-Path $DataDir 'install-log.txt'
 try {
     Start-Transcript -Path $logFile -Force | Out-Null
 } catch {
     $logFile = Join-Path $env:TEMP 'smtp-relay-install-log.txt'
     Start-Transcript -Path $logFile -Force | Out-Null
 }
+# Remove the install log written by older versions into the program folder, so
+# there is only ever one (current) install-log.txt and no confusing leftover.
+Remove-Item (Join-Path $InstallDir 'install-log.txt') -Force -ErrorAction SilentlyContinue
 
 $AppExe     = Join-Path $InstallDir 'app\smtp-relay.exe'
 $Template   = Join-Path $InstallDir 'config.env.template'
@@ -96,7 +112,7 @@ try {
         if (-not (Test-Path $svc.Winsw)) { throw "Service wrapper not found at $($svc.Winsw)" }
     }
 
-    # --- 1. Data directory tree ----------------------------------------------
+    # --- 1. Data directory tree (root already created + ACL-hardened above) --
     foreach ($sub in @('data', 'data\archive', 'logs\relay', 'logs\ui')) {
         New-Item -ItemType Directory -Force -Path (Join-Path $DataDir $sub) | Out-Null
     }
@@ -104,22 +120,6 @@ try {
     # means "a new admin was created this time" (used by the installer to offer
     # opening it only on a fresh install, not on a reinstall).
     Remove-Item (Join-Path $DataDir 'FIRST-LOGIN.txt') -Force -ErrorAction SilentlyContinue
-
-    # Lock down the data directory: drop inherited ACEs and grant full control
-    # ONLY to SYSTEM and Administrators. This both (a) stops a non-admin from
-    # planting a file (e.g. a DLL) in the working directory of the LocalSystem
-    # services and (b) keeps the encryption keys, the database and the mail
-    # archive out of standard users' reach. SIDs are used so it works on any
-    # display language:
-    #   S-1-5-18      = NT AUTHORITY\SYSTEM       (the services run as this)
-    #   S-1-5-32-544  = BUILTIN\Administrators
-    # Best-effort (/C keeps going on per-file errors); never abort the install.
-    Write-Host 'Hardening data directory ACLs...'
-    Invoke-Native -Exe 'icacls' -Arguments @(
-        $DataDir, '/inheritance:r',
-        '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F',
-        '/T', '/C'
-    ) | ForEach-Object { Write-Host "    $_" }
 
     # --- 2. Stop / remove existing services (idempotent) ---------------------
     foreach ($svc in $Services) {
