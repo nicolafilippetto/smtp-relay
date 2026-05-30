@@ -194,6 +194,10 @@ def main() -> int:
                 try:
                     icon.icon = make_icon(st)
                     icon.title = f"SMTP Relay - services {st}"
+                    # Refresh the dynamic menu text ("Services: ...") in step with
+                    # the icon; otherwise pystray keeps showing the cached value
+                    # and the menu line lags behind the colour.
+                    icon.update_menu()
                 except Exception:
                     pass
                 last = st
