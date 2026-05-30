@@ -109,7 +109,7 @@ def apply_windows_defaults(home: Path) -> None:
         "DATABASE_URL", f"sqlite+aiosqlite:///{db_path}"
     )
     os.environ.setdefault("ARCHIVE_PATH", str(data_dir / "archive"))
-    os.environ.setdefault("SMTP_LISTEN_HOST", "0.0.0.0")
+    os.environ.setdefault("SMTP_LISTEN_HOST", "0.0.0.0")  # nosec B104 - LAN relay default; user-overridable
     os.environ.setdefault("SMTP_LISTEN_PORT", "2525")
 
 

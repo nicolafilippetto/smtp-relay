@@ -308,7 +308,7 @@ def build_controller_kwargs() -> dict[str, Any]:
     # which makes the relay crash at startup. Binding to "" still listens on all
     # interfaces, and aiosmtpd then probes localhost instead (controller.py:
     # `hostname = self.hostname or self._localhost`). Correct on Windows + POSIX.
-    if host in ("0.0.0.0", "::", "*"):
+    if host in ("0.0.0.0", "::", "*"):  # nosec B104 - intentional all-interfaces bind
         host = ""
     port = int(os.environ.get("SMTP_LISTEN_PORT", "2525"))
     max_size = int(os.environ.get("SMTP_MAX_MESSAGE_SIZE", "31457280"))

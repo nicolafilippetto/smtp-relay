@@ -31,7 +31,6 @@ from common import admin_alerts, archive
 from common.bans import prune_expired_bans, prune_old_attempts
 from common.db import dispose_engine, enable_sqlite_wal, get_engine, session_scope
 from common.models import (
-    FailedAttempt,
     RelayHeartbeat,
     Settings,
 )
@@ -66,7 +65,7 @@ def _configure_logging() -> None:
 
 async def _wait_for_schema(max_attempts: int = 30, delay_s: float = 2.0) -> None:
     """Retry until the UI has run migrations and the `settings` table exists."""
-    engine = get_engine()
+    get_engine()  # initialise the engine (no connection yet)
     last_exc: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         try:
