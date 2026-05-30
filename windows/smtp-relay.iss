@@ -72,14 +72,31 @@ Name: "{autodesktop}\{#MyAppName}\SMTP Relay Status"; Filename: "powershell.exe"
 Type: dirifempty; Name: "{autodesktop}\{#MyAppName}"
 
 [Run]
+; Run the setup script hidden (no PowerShell console window). Everything is
+; captured to install-log.txt, and the finish-page checkboxes below give the
+; operator the admin password and the panel.
 Filename: "powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\install.ps1"" -InstallDir ""{app}"""; \
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\install.ps1"" -InstallDir ""{app}"""; \
   StatusMsg: "Installing services and initialising the database..."; \
-  Flags: waituntilterminated
+  Flags: runhidden waituntilterminated
+; On a FRESH install only, offer to open the first-login note (admin password).
+Filename: "{commonappdata}\smtp-relay\FIRST-LOGIN.txt"; \
+  Description: "Show the first-login details (admin password)"; \
+  Flags: postinstall shellexec nowait skipifsilent; Check: FreshInstall
+; Always offer to open the admin panel.
 Filename: "http://127.0.0.1:8000"; Description: "Open the admin panel now"; \
   Flags: postinstall shellexec nowait skipifsilent
 
 [Code]
+function FreshInstall: Boolean;
+begin
+  { install.ps1 deletes any stale FIRST-LOGIN.txt at the start and only writes
+    it when a new admin (with a one-time password) was created this run, so its
+    presence here means this was a fresh install rather than a reinstall. }
+  Result := FileExists(ExpandConstant('{commonappdata}\smtp-relay\FIRST-LOGIN.txt'));
+end;
+
+procedure StopRelayServices;
 procedure StopRelayServices;
 var
   rc: Integer;

@@ -62,14 +62,6 @@ function Invoke-Checked {
     return $output
 }
 
-function Pause-IfInteractive {
-    if ([Environment]::UserInteractive) {
-        Write-Host ''
-        Write-Host 'Press any key to close this window...'
-        $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
-    }
-}
-
 # --- Start logging FIRST, before anything that can fail ----------------------
 # Primary log lives next to the install (the folder the operator can see);
 # fall back to %TEMP% if that is somehow not writable.
@@ -108,6 +100,10 @@ try {
     foreach ($sub in @('data', 'data\archive', 'logs\relay', 'logs\ui')) {
         New-Item -ItemType Directory -Force -Path (Join-Path $DataDir $sub) | Out-Null
     }
+    # Remove any stale first-login note so its presence after this run reliably
+    # means "a new admin was created this time" (used by the installer to offer
+    # opening it only on a fresh install, not on a reinstall).
+    Remove-Item (Join-Path $DataDir 'FIRST-LOGIN.txt') -Force -ErrorAction SilentlyContinue
 
     # --- 2. Stop / remove existing services (idempotent) ---------------------
     foreach ($svc in $Services) {
@@ -220,9 +216,7 @@ catch {
     Write-Host $_.Exception.Message -ForegroundColor Red
     Write-Host "Full log: $logFile"
     try { Stop-Transcript | Out-Null } catch { }
-    Pause-IfInteractive
     exit 1
 }
 
 try { Stop-Transcript | Out-Null } catch { }
-Pause-IfInteractive
