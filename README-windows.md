@@ -119,9 +119,11 @@ database or keys. To remove it too, run from an elevated PowerShell:
 
 ## Security notes
 
-- Services run under **low-privilege per-service accounts**
-  (`NT SERVICE\smtp-relay-relay` and `...-ui`), not LocalSystem. Only those
-  accounts and Administrators can read/write the data directory.
+- The two services run as **LocalSystem**. The data directory
+  (`C:\ProgramData\smtp-relay`) is locked down by the installer so that **only
+  SYSTEM and Administrators** can access it — standard users cannot read the
+  encryption keys / database or plant files in the services' working directory.
+  (The tray's "Open config / logs folder" therefore only works for an admin.)
 - The web panel is **loopback-only** (127.0.0.1). To administer it from another
   machine you would need to add a reverse proxy with HTTPS — not included here.
 - Only the SMTP port (2525) is opened in the firewall, restricted to the

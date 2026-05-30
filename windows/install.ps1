@@ -105,6 +105,22 @@ try {
     # opening it only on a fresh install, not on a reinstall).
     Remove-Item (Join-Path $DataDir 'FIRST-LOGIN.txt') -Force -ErrorAction SilentlyContinue
 
+    # Lock down the data directory: drop inherited ACEs and grant full control
+    # ONLY to SYSTEM and Administrators. This both (a) stops a non-admin from
+    # planting a file (e.g. a DLL) in the working directory of the LocalSystem
+    # services and (b) keeps the encryption keys, the database and the mail
+    # archive out of standard users' reach. SIDs are used so it works on any
+    # display language:
+    #   S-1-5-18      = NT AUTHORITY\SYSTEM       (the services run as this)
+    #   S-1-5-32-544  = BUILTIN\Administrators
+    # Best-effort (/C keeps going on per-file errors); never abort the install.
+    Write-Host 'Hardening data directory ACLs...'
+    Invoke-Native -Exe 'icacls' -Arguments @(
+        $DataDir, '/inheritance:r',
+        '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F',
+        '/T', '/C'
+    ) | ForEach-Object { Write-Host "    $_" }
+
     # --- 2. Stop / remove existing services (idempotent) ---------------------
     foreach ($svc in $Services) {
         if (Get-Service -Name $svc.Id -ErrorAction SilentlyContinue) {
