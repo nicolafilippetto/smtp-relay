@@ -54,7 +54,8 @@ Name: "{group}\Restart SMTP Relay"; Filename: "powershell.exe"; \
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action restart"; WorkingDir: "{app}"
 Name: "{group}\SMTP Relay Status"; Filename: "powershell.exe"; \
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action status"; WorkingDir: "{app}"
-Name: "{group}\Data and Logs folder"; Filename: "explorer.exe"; Parameters: "{commonappdata}\smtp-relay"
+Name: "{group}\Data and Logs folder"; Filename: "{win}\explorer.exe"; \
+  Parameters: """{commonappdata}\smtp-relay"""; IconFilename: "{sys}\imageres.dll"; IconIndex: 3
 Name: "{group}\Uninstall SMTP Relay"; Filename: "{uninstallexe}"
 
 ; --- CARTELLA DESKTOP ---
@@ -65,7 +66,6 @@ Name: "{autodesktop}\{#MyAppName}\Stop SMTP Relay"; Filename: "powershell.exe"; 
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action stop"; WorkingDir: "{app}"; Tasks: desktopfolder
 Name: "{autodesktop}\{#MyAppName}\SMTP Relay Status"; Filename: "powershell.exe"; \
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action status"; WorkingDir: "{app}"; Tasks: desktopfolder
-Name: "{group}\Data and Logs folder"; Filename: "explorer.exe"; Parameters: "{commonappdata}\smtp-relay"
 
 [UninstallDelete]
 ; Forza la rimozione della cartella sul desktop alla disinstallazione (se vuota)
@@ -89,10 +89,24 @@ begin
   Sleep(1500);
 end;
 
+procedure RefreshStartMenu;
+var
+  rc: Integer;
+begin
+  { Best-effort: on Windows 11 the "All apps" list is cached and a freshly
+    created program group often shows only under "Recently added" until the
+    cache rebuilds. Restarting StartMenuExperienceHost forces that rebuild and
+    is harmless (Windows relaunches it immediately; it only closes the Start
+    flyout for a moment, unlike restarting explorer.exe). }
+  Exec('taskkill', '/f /im StartMenuExperienceHost.exe', '', SW_HIDE, ewNoWait, rc);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssInstall then
-    StopRelayServices;
+    StopRelayServices
+  else if CurStep = ssPostInstall then
+    RefreshStartMenu;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
