@@ -56,8 +56,14 @@ hiddenimports = [
     "aiosmtpd.controller",
     "msal",
     "httpx",
+    # System-tray controller (lazy-imported by launcher's `tray` subcommand).
+    "windows.tray",
+    "pystray._win32",
+    "PIL.Image",
+    "PIL.ImageDraw",
 ]
 hiddenimports += collect_submodules("uvicorn")
+hiddenimports += collect_submodules("pystray")
 
 block_cipher = None
 

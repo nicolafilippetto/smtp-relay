@@ -189,6 +189,12 @@ def cmd_ui(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tray(_args: argparse.Namespace) -> int:
+    import windows.tray
+
+    return windows.tray.main()
+
+
 # -----------------------------------------------------------------------------
 # Dispatch
 # -----------------------------------------------------------------------------
@@ -203,6 +209,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("ui", help="run the admin web UI (uvicorn, localhost)")
     sub.add_parser("migrate", help="apply DB migrations and bootstrap admin")
     sub.add_parser("genkey", help="print a fresh ENCRYPTION_KEY and SECRET_KEY")
+    sub.add_parser("tray", help="run the system-tray status/controller")
     return parser
 
 
@@ -211,15 +218,19 @@ _COMMANDS = {
     "ui": cmd_ui,
     "migrate": cmd_migrate,
     "genkey": cmd_genkey,
+    "tray": cmd_tray,
 }
+
+# Commands that do not touch the database/config and so must not load config.env.
+_NO_CONFIG_COMMANDS = {"genkey", "tray"}
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
-    # genkey needs no configuration; everything else loads config.env and the
-    # Windows defaults into os.environ *before* importing app modules.
-    if args.command != "genkey":
+    # Most commands load config.env and the Windows defaults into os.environ
+    # *before* importing app modules. genkey/tray need none of that.
+    if args.command not in _NO_CONFIG_COMMANDS:
         home = default_home()
         load_config_env(home)
         apply_windows_defaults(home)

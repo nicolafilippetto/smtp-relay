@@ -56,7 +56,13 @@ Name: "{group}\SMTP Relay Status"; Filename: "powershell.exe"; \
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action status"; WorkingDir: "{app}"
 Name: "{group}\Data and Logs folder"; Filename: "{win}\explorer.exe"; \
   Parameters: """{commonappdata}\smtp-relay"""; IconFilename: "{sys}\imageres.dll"; IconIndex: 3
+Name: "{group}\SMTP Relay Tray icon"; Filename: "{sys}\wscript.exe"; \
+  Parameters: """{app}\start-tray.vbs"""; WorkingDir: "{app}"
 Name: "{group}\Uninstall SMTP Relay"; Filename: "{uninstallexe}"
+
+; --- AUTOSTART (tray icon at logon, all users) ---
+Name: "{commonstartup}\SMTP Relay Tray"; Filename: "{sys}\wscript.exe"; \
+  Parameters: """{app}\start-tray.vbs"""; WorkingDir: "{app}"
 
 ; --- CARTELLA DESKTOP ---
 Name: "{autodesktop}\{#MyAppName}\SMTP Relay Panel"; Filename: "{app}\panel.url"; Tasks: desktopfolder
@@ -97,12 +103,14 @@ begin
 end;
 
 procedure StopRelayServices;
-procedure StopRelayServices;
 var
   rc: Integer;
 begin
   Exec('net', 'stop smtp-relay-ui', '', SW_HIDE, ewWaitUntilTerminated, rc);
   Exec('net', 'stop smtp-relay-relay', '', SW_HIDE, ewWaitUntilTerminated, rc);
+  { Also stop the tray (smtp-relay.exe in the user's session) so the new EXE is
+    not locked while we copy files during a reinstall/upgrade. }
+  Exec('taskkill', '/f /im smtp-relay.exe', '', SW_HIDE, ewWaitUntilTerminated, rc);
   Sleep(1500);
 end;
 
@@ -118,12 +126,29 @@ begin
   Exec('taskkill', '/f /im StartMenuExperienceHost.exe', '', SW_HIDE, ewNoWait, rc);
 end;
 
+procedure LaunchTrayAsUser;
+var
+  rc: Integer;
+begin
+  { Start the tray now, DE-elevated: a process launched via explorer.exe runs
+    with the logged-on user's normal token instead of Setup's admin token, so
+    the tray (and the folder it opens) behave as a normal user app. The .vbs
+    starts smtp-relay.exe tray hidden. Best-effort; if it fails, the Startup
+    shortcut launches it at the next logon anyway. }
+  Exec(ExpandConstant('{win}\explorer.exe'),
+       '"' + ExpandConstant('{app}\start-tray.vbs') + '"',
+       '', SW_HIDE, ewNoWait, rc);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssInstall then
     StopRelayServices
   else if CurStep = ssPostInstall then
+  begin
     RefreshStartMenu;
+    LaunchTrayAsUser;
+  end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
@@ -133,6 +158,8 @@ var
 begin
   if CurUninstallStep = usUninstall then
   begin
+    { Stop the tray so its smtp-relay.exe stops locking the install folder. }
+    Exec('taskkill', '/f /im smtp-relay.exe', '', SW_HIDE, ewWaitUntilTerminated, rc);
     params := '-NoProfile -ExecutionPolicy Bypass -File "' +
       ExpandConstant('{app}\uninstall.ps1') + '" -InstallDir "' +
       ExpandConstant('{app}') + '"';

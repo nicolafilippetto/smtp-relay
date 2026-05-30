@@ -76,6 +76,15 @@ Restart-Service smtp-relay-relay   # restart the relay
 
 Both start automatically at boot and restart on failure.
 
+### System tray icon
+
+A **tray icon** starts automatically at logon and shows the service status:
+green = both running, orange = only one, grey = stopped (light/dark to match the
+Windows theme). Click it for quick actions: *Open admin panel*, *Open config /
+logs folder*, *Start / Stop / Restart services* (a UAC prompt appears for those).
+You can also launch it manually from *Start Menu → SMTP Relay → SMTP Relay Tray
+icon*.
+
 ### Troubleshooting
 
 The installer writes a full log to `C:\ProgramData\smtp-relay\install-log.txt`.

@@ -77,6 +77,7 @@ jobs:
           Copy-Item "windows\uninstall.ps1"        "$stage\"
           Copy-Item "windows\manage.ps1"           "$stage\"
           Copy-Item "windows\panel.url"            "$stage\"
+          Copy-Item "windows\start-tray.vbs"       "$stage\"
           Copy-Item "windows\config.env.template"  "$stage\"
           Copy-Item "README-windows.md"            "$stage\"
 
