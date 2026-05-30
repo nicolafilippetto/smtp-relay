@@ -6,8 +6,12 @@
 # =============================================================================
 
 # --- Web UI (uvicorn serves the panel directly; nginx is dropped on Windows) -
+# Plain uvicorn (not [standard]): the panel is plain HTTP on loopback with no
+# websockets and no auto-reload, so we don't need watchfiles (a large Rust
+# binary), websockets, httptools or PyYAML. uvicorn falls back to its built-in
+# h11 HTTP implementation and the asyncio loop, which is all we use.
 fastapi==0.136.0
-uvicorn[standard]==0.44.0
+uvicorn==0.44.0
 pydantic==2.13.0
 pydantic-settings==2.14.0
 python-multipart==0.0.27
