@@ -53,8 +53,9 @@ foreach ($svc in $Services) {
 }
 
 # --- Firewall rule -----------------------------------------------------------
-$ruleName = 'SMTP Relay (inbound 2525)'
-Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+foreach ($rule in @('SMTP Relay (inbound 2525)', 'SMTP Relay UI (inbound 8000, LAN)')) {
+    Get-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+}
 
 # --- Data directory ----------------------------------------------------------
 if ($RemoveData) {

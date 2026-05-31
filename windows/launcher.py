@@ -172,9 +172,22 @@ def cmd_ui(_args: argparse.Namespace) -> int:
 
     from common.resources import resource_path
     from ui.main import app
+    from ui.middleware import PrivateNetworkOnlyMiddleware
 
-    host = os.environ.get("SMTP_UI_HOST", "127.0.0.1")
+    # LAN access is on by default: bind to all interfaces and let the
+    # private-network guard reject anything that is not loopback/RFC1918, so an
+    # accidental internet exposure still answers only to private clients. Set
+    # SMTP_UI_ALLOW_LAN=0 to keep the panel strictly on loopback.
+    allow_lan = os.environ.get("SMTP_UI_ALLOW_LAN", "1").strip().lower() not in (
+        "0", "false", "no", "",
+    )
+    default_host = "0.0.0.0" if allow_lan else "127.0.0.1"  # nosec B104 - guarded by PrivateNetworkOnlyMiddleware
+    host = os.environ.get("SMTP_UI_HOST", default_host)
     port = int(os.environ.get("SMTP_UI_PORT", "8000"))
+
+    # Guard by client IP whenever we listen beyond loopback.
+    if host not in ("127.0.0.1", "::1", "localhost"):
+        app.add_middleware(PrivateNetworkOnlyMiddleware)
 
     config = uvicorn.Config(
         app,
@@ -182,8 +195,9 @@ def cmd_ui(_args: argparse.Namespace) -> int:
         port=port,
         log_config=str(resource_path("ui", "log_config.json")),
         server_header=False,  # do not advertise the server software
-        # No SSL and no proxy headers: the panel binds to loopback only and
-        # nginx is not part of the Windows deployment.
+        # No SSL and no proxy headers (no nginx on Windows). The real client IP
+        # is the socket peer, which is exactly what the private-network guard
+        # needs — so we must NOT trust X-Forwarded-* here.
     )
     uvicorn.Server(config).run()
     return 0

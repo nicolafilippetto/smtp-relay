@@ -186,7 +186,18 @@ try {
     Write-Host "Adding firewall rule for TCP $smtpPort (Private/Domain profiles)..."
     New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Protocol TCP `
         -LocalPort $smtpPort -Action Allow -Profile Private,Domain | Out-Null
-    # The web UI binds to 127.0.0.1 only, so it needs no firewall rule.
+
+    # Web UI: allowed from the LAN by default (the app itself rejects any
+    # non-private client IP). Restrict to the Private + Domain firewall profiles
+    # so it is never opened on a Public network. To keep the panel loopback-only,
+    # set SMTP_UI_ALLOW_LAN=0 in config.env and this rule is harmless.
+    $uiPort = 8000
+    $uiRule = 'SMTP Relay UI (inbound 8000, LAN)'
+    Get-NetFirewallRule -DisplayName $uiRule -ErrorAction SilentlyContinue |
+        Remove-NetFirewallRule -ErrorAction SilentlyContinue
+    Write-Host "Adding firewall rule for TCP $uiPort (Private/Domain profiles)..."
+    New-NetFirewallRule -DisplayName $uiRule -Direction Inbound -Protocol TCP `
+        -LocalPort $uiPort -Action Allow -Profile Private,Domain | Out-Null
 
     # --- 7. Start services + verify ------------------------------------------
     foreach ($svc in $Services) {
