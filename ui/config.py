@@ -36,6 +36,12 @@ class UISettings(BaseSettings):
     database_url: str = Field(alias="DATABASE_URL")
     archive_path: str = Field(default="/data/archive", alias="ARCHIVE_PATH")
 
+    # Mark session/CSRF cookies as Secure (HTTPS-only). True for the Docker
+    # deployment (TLS via nginx). The native-Windows build serves plain HTTP on
+    # the LAN, where Secure cookies would never be sent by the browser (except on
+    # localhost), so the launcher sets SMTP_UI_COOKIE_SECURE=0 there.
+    cookie_secure: bool = Field(default=True, alias="SMTP_UI_COOKIE_SECURE")
+
     # Admin reset hook.
     admin_reset: bool = Field(default=False, alias="ADMIN_RESET")
     admin_new_password: str | None = Field(default=None, alias="ADMIN_NEW_PASSWORD")

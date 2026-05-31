@@ -168,12 +168,6 @@ def cmd_relay(_args: argparse.Namespace) -> int:
 
 
 def cmd_ui(_args: argparse.Namespace) -> int:
-    import uvicorn
-
-    from common.resources import resource_path
-    from ui.main import app
-    from ui.middleware import PrivateNetworkOnlyMiddleware
-
     # LAN access is on by default: bind to all interfaces and let the
     # private-network guard reject anything that is not loopback/RFC1918, so an
     # accidental internet exposure still answers only to private clients. Set
@@ -185,8 +179,24 @@ def cmd_ui(_args: argparse.Namespace) -> int:
     host = os.environ.get("SMTP_UI_HOST", default_host)
     port = int(os.environ.get("SMTP_UI_PORT", "8000"))
 
+    listens_beyond_loopback = host not in ("127.0.0.1", "::1", "localhost")
+
+    # The native-Windows panel is plain HTTP. Browsers only send Secure cookies
+    # over HTTPS (localhost excepted), so when we serve the LAN we must NOT mark
+    # the session/CSRF cookies Secure — otherwise non-localhost clients lose
+    # their cookie and every POST fails with "session expired". Set this BEFORE
+    # importing ui.main, because get_settings() caches the value at import time.
+    if listens_beyond_loopback:
+        os.environ.setdefault("SMTP_UI_COOKIE_SECURE", "0")
+
+    import uvicorn
+
+    from common.resources import resource_path
+    from ui.main import app
+    from ui.middleware import PrivateNetworkOnlyMiddleware
+
     # Guard by client IP whenever we listen beyond loopback.
-    if host not in ("127.0.0.1", "::1", "localhost"):
+    if listens_beyond_loopback:
         app.add_middleware(PrivateNetworkOnlyMiddleware)
 
     config = uvicorn.Config(

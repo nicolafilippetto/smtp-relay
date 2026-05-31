@@ -73,7 +73,7 @@ def _set_session_cookies(
         encode_session(payload),
         max_age=settings.session_lifetime_seconds,
         httponly=True,
-        secure=True,
+        secure=settings.cookie_secure,
         samesite="strict",
         path="/",
     )
@@ -86,7 +86,7 @@ def _set_session_cookies(
         # so JavaScript never needs to read the cookie. Setting
         # HttpOnly hardens against XSS-driven CSRF token theft.
         httponly=True,
-        secure=True,
+        secure=settings.cookie_secure,
         samesite="strict",
         path="/",
     )
@@ -136,7 +136,7 @@ async def login_form(
             token,  # noqa: S604
             max_age=get_settings().session_lifetime_seconds,
             httponly=True,
-            secure=True,
+            secure=get_settings().cookie_secure,
             samesite="strict",
             path="/",
         )
