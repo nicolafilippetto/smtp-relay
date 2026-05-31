@@ -7,7 +7,6 @@ HTTP internally — the browser only ever sees the nginx-facing scheme.
 from __future__ import annotations
 
 import ipaddress
-import os
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
