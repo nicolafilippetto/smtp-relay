@@ -45,35 +45,47 @@ Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdir
 
 [Icons]
 ; --- MENU START ---
-Name: "{group}\SMTP Relay Admin Panel"; Filename: "{app}\panel.url"
+Name: "{group}\SMTP Relay Admin Panel"; Filename: "{app}\panel.url"; \
+  IconFilename: "{app}\icons\app.ico"
 Name: "{group}\Start SMTP Relay"; Filename: "powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action start"; WorkingDir: "{app}"
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action start"; WorkingDir: "{app}"; \
+  IconFilename: "{app}\icons\start.ico"
 Name: "{group}\Stop SMTP Relay"; Filename: "powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action stop"; WorkingDir: "{app}"
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action stop"; WorkingDir: "{app}"; \
+  IconFilename: "{app}\icons\stop.ico"
 Name: "{group}\Restart SMTP Relay"; Filename: "powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action restart"; WorkingDir: "{app}"
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action restart"; WorkingDir: "{app}"; \
+  IconFilename: "{app}\icons\restart.ico"
 Name: "{group}\SMTP Relay Status"; Filename: "powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action status"; WorkingDir: "{app}"
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action status"; WorkingDir: "{app}"; \
+  IconFilename: "{app}\icons\status.ico"
 Name: "{group}\Reset admin password"; Filename: "powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action reset-admin"; WorkingDir: "{app}"
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action reset-admin"; WorkingDir: "{app}"; \
+  IconFilename: "{app}\icons\reset.ico"
 Name: "{group}\Data and Logs folder"; Filename: "{win}\explorer.exe"; \
-  Parameters: """{commonappdata}\smtp-relay"""; IconFilename: "{sys}\imageres.dll"; IconIndex: 3
+  Parameters: """{commonappdata}\smtp-relay"""; IconFilename: "{app}\icons\folder.ico"
 Name: "{group}\SMTP Relay Tray icon"; Filename: "{sys}\wscript.exe"; \
-  Parameters: """{app}\start-tray.vbs"""; WorkingDir: "{app}"
+  Parameters: """{app}\start-tray.vbs"""; WorkingDir: "{app}"; \
+  IconFilename: "{app}\icons\app.ico"
 Name: "{group}\Uninstall SMTP Relay"; Filename: "{uninstallexe}"
 
 ; --- AUTOSTART (tray icon at logon, all users) ---
 Name: "{commonstartup}\SMTP Relay Tray"; Filename: "{sys}\wscript.exe"; \
-  Parameters: """{app}\start-tray.vbs"""; WorkingDir: "{app}"
+  Parameters: """{app}\start-tray.vbs"""; WorkingDir: "{app}"; \
+  IconFilename: "{app}\icons\app.ico"
 
 ; --- CARTELLA DESKTOP ---
-Name: "{autodesktop}\{#MyAppName}\SMTP Relay Panel"; Filename: "{app}\panel.url"; Tasks: desktopfolder
+Name: "{autodesktop}\{#MyAppName}\SMTP Relay Panel"; Filename: "{app}\panel.url"; Tasks: desktopfolder; \
+  IconFilename: "{app}\icons\app.ico"
 Name: "{autodesktop}\{#MyAppName}\Start SMTP Relay"; Filename: "powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action start"; WorkingDir: "{app}"; Tasks: desktopfolder
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action start"; WorkingDir: "{app}"; Tasks: desktopfolder; \
+  IconFilename: "{app}\icons\start.ico"
 Name: "{autodesktop}\{#MyAppName}\Stop SMTP Relay"; Filename: "powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action stop"; WorkingDir: "{app}"; Tasks: desktopfolder
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action stop"; WorkingDir: "{app}"; Tasks: desktopfolder; \
+  IconFilename: "{app}\icons\stop.ico"
 Name: "{autodesktop}\{#MyAppName}\SMTP Relay Status"; Filename: "powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action status"; WorkingDir: "{app}"; Tasks: desktopfolder
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action status"; WorkingDir: "{app}"; Tasks: desktopfolder; \
+  IconFilename: "{app}\icons\status.ico"
 
 [UninstallDelete]
 ; Forza la rimozione della cartella sul desktop alla disinstallazione (se vuota)

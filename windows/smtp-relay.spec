@@ -93,6 +93,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=True,  # services run headless; console output is captured to logs
+    icon=_p("windows", "icons", "app.ico"),
 )
 
 coll = COLLECT(

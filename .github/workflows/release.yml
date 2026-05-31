@@ -78,6 +78,8 @@ jobs:
           Copy-Item "windows\panel.url"            "$stage\"
           Copy-Item "windows\start-tray.vbs"       "$stage\"
           Copy-Item "windows\config.env.template"  "$stage\"
+          New-Item -ItemType Directory -Force -Path "$stage\icons" | Out-Null
+          Copy-Item "windows\icons\*.ico"        "$stage\icons\"
           Copy-Item "README-windows.md"            "$stage\"
 
       - name: Install Inno Setup
