@@ -169,6 +169,14 @@ async def login_submit(
         if ip and await is_banned(
             s, kind=BanKind.UI, scope=BanScope.IP, value=ip
         ):
+            await audit_record(
+                s,
+                event_type=AuditEventType.LOGIN_FAIL,
+                outcome=AuditOutcome.FAILURE,
+                source_ip=ip,
+                username=username,
+                details={"blocked": "ban", "scope": "ip"},
+            )
             return render(
                 request,
                 "login.html",
@@ -178,6 +186,14 @@ async def login_submit(
         if username and await is_banned(
             s, kind=BanKind.UI, scope=BanScope.USERNAME, value=username
         ):
+            await audit_record(
+                s,
+                event_type=AuditEventType.LOGIN_FAIL,
+                outcome=AuditOutcome.FAILURE,
+                source_ip=ip,
+                username=username,
+                details={"blocked": "ban", "scope": "username"},
+            )
             return render(
                 request,
                 "login.html",
