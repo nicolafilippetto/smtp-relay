@@ -68,8 +68,23 @@ jobs:
           $stage = "staging"
           New-Item -ItemType Directory -Force -Path "$stage\app" | Out-Null
           Copy-Item -Recurse -Force "dist\smtp-relay\*" "$stage\app\"
-          Invoke-WebRequest -Uri $env:WINSW_URL -OutFile "$stage\smtp-relay-relay.exe"
-          Copy-Item "$stage\smtp-relay-relay.exe" "$stage\smtp-relay-ui.exe"
+          # Download WinSW with retries + validate it is a real PE/exe (GitHub
+          # can transiently return an HTML error page).
+          $winsw = "$stage\smtp-relay-relay.exe"
+          $ok = $false
+          for ($i = 1; $i -le 5; $i++) {
+            try {
+              Invoke-WebRequest -Uri $env:WINSW_URL -OutFile $winsw -UseBasicParsing -MaximumRedirection 5
+              $bytes = [IO.File]::ReadAllBytes($winsw)
+              if ($bytes.Length -gt 100000 -and $bytes[0] -eq 0x4D -and $bytes[1] -eq 0x5A) { $ok = $true; break }
+              Write-Host "Attempt $i: not a valid exe (size $($bytes.Length)); retrying..."
+            } catch {
+              Write-Host "Attempt $i failed: $($_.Exception.Message); retrying..."
+            }
+            Start-Sleep -Seconds ([Math]::Pow(2, $i))
+          }
+          if (-not $ok) { throw "Could not download a valid WinSW exe from $env:WINSW_URL" }
+          Copy-Item $winsw "$stage\smtp-relay-ui.exe"
           Copy-Item "windows\smtp-relay-relay.xml" "$stage\"
           Copy-Item "windows\smtp-relay-ui.xml"    "$stage\"
           Copy-Item "windows\install.ps1"          "$stage\"
