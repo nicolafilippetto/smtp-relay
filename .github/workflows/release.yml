@@ -77,9 +77,9 @@ jobs:
               Invoke-WebRequest -Uri $env:WINSW_URL -OutFile $winsw -UseBasicParsing -MaximumRedirection 5
               $bytes = [IO.File]::ReadAllBytes($winsw)
               if ($bytes.Length -gt 100000 -and $bytes[0] -eq 0x4D -and $bytes[1] -eq 0x5A) { $ok = $true; break }
-              Write-Host "Attempt $i: not a valid exe (size $($bytes.Length)); retrying..."
+              Write-Host "Attempt ${i}: not a valid exe (size $($bytes.Length)); retrying..."
             } catch {
-              Write-Host "Attempt $i failed: $($_.Exception.Message); retrying..."
+              Write-Host "Attempt ${i} failed: $($_.Exception.Message); retrying..."
             }
             Start-Sleep -Seconds ([Math]::Pow(2, $i))
           }
