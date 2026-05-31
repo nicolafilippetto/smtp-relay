@@ -54,6 +54,8 @@ Name: "{group}\Restart SMTP Relay"; Filename: "powershell.exe"; \
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action restart"; WorkingDir: "{app}"
 Name: "{group}\SMTP Relay Status"; Filename: "powershell.exe"; \
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action status"; WorkingDir: "{app}"
+Name: "{group}\Reset admin password"; Filename: "powershell.exe"; \
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\manage.ps1"" -Action reset-admin"; WorkingDir: "{app}"
 Name: "{group}\Data and Logs folder"; Filename: "{win}\explorer.exe"; \
   Parameters: """{commonappdata}\smtp-relay"""; IconFilename: "{sys}\imageres.dll"; IconIndex: 3
 Name: "{group}\SMTP Relay Tray icon"; Filename: "{sys}\wscript.exe"; \

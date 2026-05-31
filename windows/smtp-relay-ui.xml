@@ -7,7 +7,11 @@
        The application bundle lives in the app\ subfolder. -->
   <executable>%BASE%\app\smtp-relay.exe</executable>
   <arguments>ui</arguments>
-  <workingdirectory>C:\ProgramData\smtp-relay</workingdirectory>
+  <!-- Working dir is the (admin-only) program folder, not the writable
+       ProgramData root, so a standard user cannot plant a DLL in the service's
+       CWD. The app resolves all its paths from the ProgramData env var, not the
+       CWD, so this is purely a hardening choice. -->
+  <workingdirectory>%BASE%\app</workingdirectory>
 
   <!-- Runs as LocalSystem (WinSW default). This is the most reliable account
        for unattended installs; data lives under C:\ProgramData which SYSTEM

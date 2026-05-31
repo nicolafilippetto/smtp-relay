@@ -13,7 +13,7 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('start', 'stop', 'restart', 'status')]
+    [ValidateSet('start', 'stop', 'restart', 'status', 'reset-admin')]
     [string]$Action = 'status'
 )
 
@@ -29,6 +29,16 @@ function Test-Admin {
 if ($Action -ne 'status' -and -not (Test-Admin)) {
     $psi = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Action $Action"
     Start-Process -FilePath 'powershell.exe' -ArgumentList $psi -Verb RunAs
+    return
+}
+
+# Admin password reset: run the app's interactive reset-admin and stop here.
+if ($Action -eq 'reset-admin') {
+    $appExe = Join-Path $PSScriptRoot 'app\smtp-relay.exe'
+    & $appExe reset-admin
+    Write-Host ''
+    Write-Host 'Press any key to close...'
+    $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
     return
 }
 

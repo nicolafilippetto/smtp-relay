@@ -95,8 +95,23 @@ those logs.
 
 Service logs **rotate automatically** (WinSW, roll-by-size): each `.out.log` /
 `.err.log` is capped at 10 MB and the 8 most recent files are kept, so they
-never grow without bound. These logs and `install-log.txt` live in the
-ACL-locked data directory, so opening them requires Administrator access.
+never grow without bound. The logs and `install-log.txt` are readable; only
+`config.env` and the `data\` subfolder are restricted to administrators.
+
+### Reset the admin password
+
+If the admin password (or the TOTP device) is lost, use *Start Menu → SMTP
+Relay → **Reset admin password*** (it asks for Administrator rights, then
+prompts for a new password). Equivalent from an elevated prompt:
+
+```powershell
+& "C:\Program Files\smtp-relay\app\smtp-relay.exe" reset-admin
+```
+
+This sets a new password and clears TOTP; on the next login the admin must
+change the password again and re-enrol TOTP. (Under the hood this is the same
+`ADMIN_RESET` mechanism as the Docker build — you no longer have to edit
+`config.env` by hand.)
 
 ---
 
@@ -124,11 +139,12 @@ database or keys. To remove it too, run from an elevated PowerShell:
 
 ## Security notes
 
-- The two services run as **LocalSystem**. The data directory
-  (`C:\ProgramData\smtp-relay`) is locked down by the installer so that **only
-  SYSTEM and Administrators** can access it — standard users cannot read the
-  encryption keys / database or plant files in the services' working directory.
-  (The tray's "Open config / logs folder" therefore only works for an admin.)
+- The two services run as **LocalSystem**. The installer locks the sensitive
+  parts of the data directory to **SYSTEM and Administrators only**: `config.env`
+  (the encryption/session keys) and the `data\` subfolder (the database and the
+  mail archive). The directory root, the `logs\` folder and `install-log.txt`
+  stay readable. The services' working directory is the admin-only program
+  folder, so a standard user cannot plant a DLL in it.
 - The web panel is **loopback-only** (127.0.0.1). To administer it from another
   machine you would need to add a reverse proxy with HTTPS — not included here.
 - Only the SMTP port (2525) is opened in the firewall, restricted to the

@@ -195,6 +195,37 @@ def cmd_tray(_args: argparse.Namespace) -> int:
     return windows.tray.main()
 
 
+def cmd_reset_admin(_args: argparse.Namespace) -> int:
+    """Reset the admin password (and clear its TOTP) interactively.
+
+    Reuses the same mechanism as the Docker ADMIN_RESET flow, but without
+    editing config.env: it prompts for a new password, sets the reset env vars
+    in-process, and runs the bootstrap. The admin must change this password and
+    re-enrol TOTP on the next login.
+    """
+    import getpass
+
+    pw1 = getpass.getpass("New admin password (min 12 chars): ")
+    pw2 = getpass.getpass("Confirm new password: ")
+    if pw1 != pw2:
+        print("Passwords do not match. Nothing changed.")
+        return 1
+    if len(pw1) < 12:
+        print("Password must be at least 12 characters. Nothing changed.")
+        return 1
+
+    os.environ["ADMIN_RESET"] = "1"
+    os.environ["ADMIN_NEW_PASSWORD"] = pw1
+
+    import ui.bootstrap
+
+    ui.bootstrap.main()
+    print("")
+    print("Admin password reset. Open http://127.0.0.1:8000 and log in as 'admin'")
+    print("with the new password; you will be asked to change it and re-enrol TOTP.")
+    return 0
+
+
 # -----------------------------------------------------------------------------
 # Dispatch
 # -----------------------------------------------------------------------------
@@ -210,6 +241,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("migrate", help="apply DB migrations and bootstrap admin")
     sub.add_parser("genkey", help="print a fresh ENCRYPTION_KEY and SECRET_KEY")
     sub.add_parser("tray", help="run the system-tray status/controller")
+    sub.add_parser("reset-admin", help="reset the admin password and clear its TOTP")
     return parser
 
 
@@ -219,6 +251,7 @@ _COMMANDS = {
     "migrate": cmd_migrate,
     "genkey": cmd_genkey,
     "tray": cmd_tray,
+    "reset-admin": cmd_reset_admin,
 }
 
 # Commands that do not touch the database/config and so must not load config.env.
