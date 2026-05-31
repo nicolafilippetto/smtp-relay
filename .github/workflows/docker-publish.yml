@@ -3,7 +3,9 @@ name: Build & Publish Docker Image
 on:
   push:
     branches: ["main"]
-    tags: ["v*"]
+    # Note: version tags (v*) are handled by release.yml, which builds Docker
+    # AND the Windows installer at the same version. Triggering here on tags too
+    # would double-build the images, so it is intentionally omitted.
 
 jobs:
   build-and-push:

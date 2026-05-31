@@ -10,18 +10,21 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
-from pathlib import Path
 from typing import Any
 
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from common.resources import resource_path
+
 from .config import get_settings
 from .security import CSRF_COOKIE
 
 
-_templates_dir = Path(__file__).resolve().parent / "templates"
+# Resolves to ``<repo>/ui/templates`` in source mode and to the bundled copy
+# under ``sys._MEIPASS`` when running as a frozen Windows executable.
+_templates_dir = resource_path("ui", "templates")
 
 _env = Environment(
     loader=FileSystemLoader(str(_templates_dir)),

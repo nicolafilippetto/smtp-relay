@@ -1,0 +1,30 @@
+<service>
+  <id>smtp-relay-ui</id>
+  <name>SMTP Relay - Web UI</name>
+  <description>Admin web panel (uvicorn) served on http://127.0.0.1:8000 (localhost only).</description>
+
+  <!-- %BASE% is the folder containing this WinSW exe (the install directory).
+       The application bundle lives in the app\ subfolder. -->
+  <executable>%BASE%\app\smtp-relay.exe</executable>
+  <arguments>ui</arguments>
+  <!-- Working dir is the (admin-only) program folder, not the writable
+       ProgramData root, so a standard user cannot plant a DLL in the service's
+       CWD. The app resolves all its paths from the ProgramData env var, not the
+       CWD, so this is purely a hardening choice. -->
+  <workingdirectory>%BASE%\app</workingdirectory>
+
+  <!-- Runs as LocalSystem (WinSW default). This is the most reliable account
+       for unattended installs; data lives under C:\ProgramData which SYSTEM
+       can write. Hardening to a lower-privilege account can be done later. -->
+
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="10 sec"/>
+
+  <log mode="roll-by-size">
+    <logpath>C:\ProgramData\smtp-relay\logs\ui</logpath>
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+
+  <env name="LOG_LEVEL" value="INFO"/>
+</service>

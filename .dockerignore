@@ -1,0 +1,38 @@
+# Keep the Docker build context small and focused. The Dockerfiles only COPY
+# common/, relay/, ui/ (plus the requirements files), so everything else is
+# noise that would otherwise be uploaded to the Docker daemon on every build.
+
+# Native-Windows packaging — never part of any Docker image.
+windows/
+README-windows.md
+
+# Git / CI / editor metadata
+.git/
+.github/
+.gitignore
+.dockerignore
+
+# Local env / secrets and build artifacts
+.env
+*.env
+!**/config.env.template
+dist/
+build/
+output/
+staging/
+*.spec
+
+# Python caches and test/tooling artifacts
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.venv/
+venv/
+
+# Docs and compose files (not needed inside the images)
+docs/
+*.md

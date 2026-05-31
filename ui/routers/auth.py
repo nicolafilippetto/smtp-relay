@@ -73,7 +73,7 @@ def _set_session_cookies(
         encode_session(payload),
         max_age=settings.session_lifetime_seconds,
         httponly=True,
-        secure=True,
+        secure=settings.cookie_secure,
         samesite="strict",
         path="/",
     )
@@ -86,7 +86,7 @@ def _set_session_cookies(
         # so JavaScript never needs to read the cookie. Setting
         # HttpOnly hardens against XSS-driven CSRF token theft.
         httponly=True,
-        secure=True,
+        secure=settings.cookie_secure,
         samesite="strict",
         path="/",
     )
@@ -136,7 +136,7 @@ async def login_form(
             token,  # noqa: S604
             max_age=get_settings().session_lifetime_seconds,
             httponly=True,
-            secure=True,
+            secure=get_settings().cookie_secure,
             samesite="strict",
             path="/",
         )
@@ -169,6 +169,14 @@ async def login_submit(
         if ip and await is_banned(
             s, kind=BanKind.UI, scope=BanScope.IP, value=ip
         ):
+            await audit_record(
+                s,
+                event_type=AuditEventType.LOGIN_FAIL,
+                outcome=AuditOutcome.FAILURE,
+                source_ip=ip,
+                username=username,
+                details={"blocked": "ban", "scope": "ip"},
+            )
             return render(
                 request,
                 "login.html",
@@ -178,6 +186,14 @@ async def login_submit(
         if username and await is_banned(
             s, kind=BanKind.UI, scope=BanScope.USERNAME, value=username
         ):
+            await audit_record(
+                s,
+                event_type=AuditEventType.LOGIN_FAIL,
+                outcome=AuditOutcome.FAILURE,
+                source_ip=ip,
+                username=username,
+                details={"blocked": "ban", "scope": "username"},
+            )
             return render(
                 request,
                 "login.html",

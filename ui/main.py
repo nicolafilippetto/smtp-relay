@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 import time
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -21,6 +20,7 @@ from slowapi.util import get_remote_address
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from common.db import dispose_engine, enable_sqlite_wal, get_engine
+from common.resources import resource_path
 
 from .config import get_settings
 from .middleware import SecurityHeadersMiddleware
@@ -84,8 +84,9 @@ def create_app() -> FastAPI:
     # Middleware.
     app.add_middleware(SecurityHeadersMiddleware)
 
-    # Static assets.
-    static_dir = Path(__file__).resolve().parent / "static"
+    # Static assets. Resolves to ``<repo>/ui/static`` in source mode and to the
+    # bundled copy under ``sys._MEIPASS`` when frozen (Windows executable).
+    static_dir = resource_path("ui", "static")
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     # Routers.

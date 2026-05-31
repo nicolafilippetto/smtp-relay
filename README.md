@@ -26,6 +26,10 @@ Three Docker containers, built and published automatically via GitHub Actions:
 
 All persistent data lives in Docker volumes — upgrades never touch your data.
 
+> **Prefer not to run Docker on Windows?** There is now a **native Windows
+> installer** that runs the relay and the admin panel as Windows background
+> services — no Docker required. See [Native Windows install](#native-windows-install).
+
 ---
 
 ## Quick start
@@ -221,6 +225,44 @@ Migrations run automatically. All data is preserved.
 
 ---
 
+## Native Windows install
+
+For sites that prefer **not** to run Docker, the same relay and admin panel ship
+as a single Windows installer (`smtp-relay-setup.exe`) that installs them as two
+**Windows background services** (no Docker, no nginx). It is attached to each
+[GitHub Release](https://github.com/nicolafilippetto/smtp-relay/releases) at the
+same version as the Docker images.
+
+| Aspect | Docker | Native Windows |
+|--------|--------|----------------|
+| Runs as | 3 containers | 2 Windows services (`smtp-relay-relay`, `smtp-relay-ui`) |
+| Admin panel | HTTPS via nginx | HTTP on the LAN, **restricted to private/loopback IPs** (no nginx) |
+| Install | `docker compose up -d` | run `smtp-relay-setup.exe` |
+| Data | Docker volume | `C:\ProgramData\smtp-relay` |
+
+What the installer does: bundles everything (Python included — nothing else to
+install), generates the encryption keys, runs the database migrations, creates
+the `admin` user, registers and starts the two services, opens the firewall, and
+adds Start-Menu / tray shortcuts. The web panel is reachable from the LAN but
+**rejects any non-private client IP**, so it stays safe even if the host is
+accidentally exposed to the internet.
+
+Highlights:
+
+- **Tray icon** with live service status (green / orange / grey) and quick
+  actions: open panel, open config/logs, start / stop / restart.
+- **Admin password reset** without editing files: *Start Menu → SMTP Relay →
+  Reset admin password* (or `smtp-relay.exe reset-admin`).
+- **Automatic log rotation** (10 MB × 8 files per service).
+
+Full instructions, configuration options and troubleshooting are in
+**[README-windows.md](README-windows.md)**.
+
+> The Windows build is unsigned for now, so SmartScreen shows an "unknown
+> publisher" prompt on first run (*More info → Run anyway*).
+
+---
+
 ## Microsoft Entra ID setup
 
 Everything happens in the Entra admin center. No Exchange Online configuration needed — no connectors, no transport rules.
@@ -286,6 +328,9 @@ If you lose the admin password or TOTP device:
    ```sh
    docker compose up -d
    ```
+
+> **Native Windows:** no file editing — use *Start Menu → SMTP Relay → Reset
+> admin password* (or run `smtp-relay.exe reset-admin` from the install folder).
 
 ---
 

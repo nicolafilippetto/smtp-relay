@@ -1,42 +1,155 @@
 name: Create Release
 
+# Unified release: pushing a new version into the RELEASE file on main builds
+# the Docker images AND the native-Windows installer at the SAME version, then
+# publishes one GitHub Release with the installer attached.
+
 on:
   push:
     branches: ["main"]
     paths: ["RELEASE"]
 
+permissions:
+  contents: write
+  packages: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
-  release:
+  # ---------------------------------------------------------------------------
+  # Resolve the version once so Docker and Windows share it.
+  # ---------------------------------------------------------------------------
+  version:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      packages: write
-
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      sem: ${{ steps.v.outputs.sem }}
+      major_minor: ${{ steps.v.outputs.major_minor }}
+      major: ${{ steps.v.outputs.major }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4.2.2
-        with:
-          fetch-depth: 0
-
+      - uses: actions/checkout@v4.2.2
       - name: Read version
         id: v
         run: |
           RAW=$(cat RELEASE | tr -d '[:space:]')
           [[ "$RAW" == v* ]] && TAG="$RAW" || TAG="v$RAW"
           SEM="${TAG#v}"
-          MAJOR_MINOR="${SEM%.*}"
-          MAJOR="${SEM%%.*}"
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "sem=${SEM}" >> $GITHUB_OUTPUT
-          echo "major_minor=${MAJOR_MINOR}" >> $GITHUB_OUTPUT
-          echo "major=${MAJOR}" >> $GITHUB_OUTPUT
+          echo "major_minor=${SEM%.*}" >> $GITHUB_OUTPUT
+          echo "major=${SEM%%.*}" >> $GITHUB_OUTPUT
+
+  # ---------------------------------------------------------------------------
+  # Build the Windows installer at the release version (Windows runner).
+  # ---------------------------------------------------------------------------
+  windows:
+    needs: version
+    runs-on: windows-latest
+    env:
+      WINSW_URL: https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install build dependencies
+        run: pip install -r windows/requirements.txt
+
+      - name: Build executable (PyInstaller)
+        run: pyinstaller --noconfirm windows/smtp-relay.spec
+
+      - name: Stage installer payload
+        shell: pwsh
+        run: |
+          $stage = "staging"
+          New-Item -ItemType Directory -Force -Path "$stage\app" | Out-Null
+          Copy-Item -Recurse -Force "dist\smtp-relay\*" "$stage\app\"
+          # Download WinSW with retries + validate it is a real PE/exe (GitHub
+          # can transiently return an HTML error page).
+          $winsw = "$stage\smtp-relay-relay.exe"
+          $ok = $false
+          for ($i = 1; $i -le 5; $i++) {
+            try {
+              Invoke-WebRequest -Uri $env:WINSW_URL -OutFile $winsw -UseBasicParsing -MaximumRedirection 5
+              $bytes = [IO.File]::ReadAllBytes($winsw)
+              if ($bytes.Length -gt 100000 -and $bytes[0] -eq 0x4D -and $bytes[1] -eq 0x5A) { $ok = $true; break }
+              Write-Host "Attempt ${i}: not a valid exe (size $($bytes.Length)); retrying..."
+            } catch {
+              Write-Host "Attempt ${i} failed: $($_.Exception.Message); retrying..."
+            }
+            Start-Sleep -Seconds ([Math]::Pow(2, $i))
+          }
+          if (-not $ok) { throw "Could not download a valid WinSW exe from $env:WINSW_URL" }
+          Copy-Item $winsw "$stage\smtp-relay-ui.exe"
+          Copy-Item "windows\smtp-relay-relay.xml" "$stage\"
+          Copy-Item "windows\smtp-relay-ui.xml"    "$stage\"
+          Copy-Item "windows\install.ps1"          "$stage\"
+          Copy-Item "windows\uninstall.ps1"        "$stage\"
+          Copy-Item "windows\manage.ps1"           "$stage\"
+          Copy-Item "windows\panel.url"            "$stage\"
+          Copy-Item "windows\start-tray.vbs"       "$stage\"
+          Copy-Item "windows\config.env.template"  "$stage\"
+          New-Item -ItemType Directory -Force -Path "$stage\icons" | Out-Null
+          Copy-Item "windows\icons\*.ico"        "$stage\icons\"
+          Copy-Item "README-windows.md"            "$stage\"
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          $stageAbs = (Resolve-Path "staging").Path
+          $outAbs = Join-Path (Get-Location).Path "output"
+          New-Item -ItemType Directory -Force -Path $outAbs | Out-Null
+          & $iscc "/DMyAppVersion=${{ needs.version.outputs.sem }}" "/DStageDir=$stageAbs" "/DOutDir=$outAbs" "windows\smtp-relay.iss"
+
+      # Optional code signing (disabled until CODE_SIGN_* secrets are set).
+      - name: Sign installer
+        if: ${{ env.CODE_SIGN_PFX_BASE64 != '' }}
+        env:
+          CODE_SIGN_PFX_BASE64: ${{ secrets.CODE_SIGN_PFX_BASE64 }}
+          CODE_SIGN_PASSWORD: ${{ secrets.CODE_SIGN_PASSWORD }}
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:CODE_SIGN_PFX_BASE64))
+          $signtool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1).FullName
+          & $signtool sign /f cert.pfx /p $env:CODE_SIGN_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "output\smtp-relay-setup.exe"
+          Remove-Item cert.pfx
+
+      - name: Rename installer with version
+        shell: pwsh
+        run: Copy-Item "output\smtp-relay-setup.exe" "output\smtp-relay-setup-${{ needs.version.outputs.tag }}.exe"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: windows-installer
+          path: output/smtp-relay-setup-${{ needs.version.outputs.tag }}.exe
+
+  # ---------------------------------------------------------------------------
+  # Tag, push Docker images, and publish the Release with the installer.
+  # ---------------------------------------------------------------------------
+  release:
+    needs: [version, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
 
       - name: Create and push git tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a ${{ steps.v.outputs.tag }} -m "Release ${{ steps.v.outputs.tag }}"
-          git push origin ${{ steps.v.outputs.tag }}
+          git tag -a ${{ needs.version.outputs.tag }} -m "Release ${{ needs.version.outputs.tag }}"
+          git push origin ${{ needs.version.outputs.tag }}
 
       - name: Login to ghcr.io
         uses: docker/login-action@v3.4.0
@@ -52,9 +165,9 @@ jobs:
           file: relay/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/relay:${{ steps.v.outputs.sem }}
-            ghcr.io/${{ github.repository }}/relay:${{ steps.v.outputs.major_minor }}
-            ghcr.io/${{ github.repository }}/relay:${{ steps.v.outputs.major }}
+            ghcr.io/${{ github.repository }}/relay:${{ needs.version.outputs.sem }}
+            ghcr.io/${{ github.repository }}/relay:${{ needs.version.outputs.major_minor }}
+            ghcr.io/${{ github.repository }}/relay:${{ needs.version.outputs.major }}
             ghcr.io/${{ github.repository }}/relay:latest
 
       - name: Build e Push ui
@@ -64,9 +177,9 @@ jobs:
           file: ui/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/ui:${{ steps.v.outputs.sem }}
-            ghcr.io/${{ github.repository }}/ui:${{ steps.v.outputs.major_minor }}
-            ghcr.io/${{ github.repository }}/ui:${{ steps.v.outputs.major }}
+            ghcr.io/${{ github.repository }}/ui:${{ needs.version.outputs.sem }}
+            ghcr.io/${{ github.repository }}/ui:${{ needs.version.outputs.major_minor }}
+            ghcr.io/${{ github.repository }}/ui:${{ needs.version.outputs.major }}
             ghcr.io/${{ github.repository }}/ui:latest
 
       - name: Build e Push nginx
@@ -76,16 +189,23 @@ jobs:
           file: nginx/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/nginx:${{ steps.v.outputs.sem }}
-            ghcr.io/${{ github.repository }}/nginx:${{ steps.v.outputs.major_minor }}
-            ghcr.io/${{ github.repository }}/nginx:${{ steps.v.outputs.major }}
+            ghcr.io/${{ github.repository }}/nginx:${{ needs.version.outputs.sem }}
+            ghcr.io/${{ github.repository }}/nginx:${{ needs.version.outputs.major_minor }}
+            ghcr.io/${{ github.repository }}/nginx:${{ needs.version.outputs.major }}
             ghcr.io/${{ github.repository }}/nginx:latest
+
+      - name: Download Windows installer
+        uses: actions/download-artifact@v5
+        with:
+          name: windows-installer
+          path: dist-windows
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create ${{ steps.v.outputs.tag }} \
-            --title "Release ${{ steps.v.outputs.tag }}" \
+          gh release create ${{ needs.version.outputs.tag }} \
+            --title "Release ${{ needs.version.outputs.tag }}" \
             --generate-notes \
-            --latest
+            --latest \
+            dist-windows/smtp-relay-setup-${{ needs.version.outputs.tag }}.exe
