@@ -107,21 +107,18 @@ try {
     foreach ($sub in @('data', 'data\archive', 'logs\relay', 'logs\ui')) {
         New-Item -ItemType Directory -Force -Path (Join-Path $DataDir $sub) | Out-Null
     }
+    # Re-enable inheritance on the data tree first. This repairs a directory that
+    # a previous (buggy) build may have left with a broken ACL that blocked even
+    # SYSTEM/Administrators, so the migration below can always open the database.
+    # The protective tightening is re-applied at the end (step 8).
+    Invoke-Native -Exe 'icacls' -Arguments @((Join-Path $DataDir 'data'), '/reset', '/T', '/C') | Out-Null
     # Remove any stale first-login note so its presence after this run reliably
     # means "a new admin was created this time" (used by the installer to offer
     # opening it only on a fresh install, not on a reinstall).
     Remove-Item (Join-Path $DataDir 'FIRST-LOGIN.txt') -Force -ErrorAction SilentlyContinue
-
-    # Lock ONLY the data\ subfolder (database + mail archive) to SYSTEM and
-    # Administrators. The dir root, logs and install-log.txt stay readable.
-    # SIDs are language-independent: S-1-5-18 = SYSTEM, S-1-5-32-544 = Admins.
-    # /T fixes files from a previous install; /C continues past per-file errors.
-    Write-Host 'Securing the data subfolder (database + archive)...'
-    Invoke-Native -Exe 'icacls' -Arguments @(
-        (Join-Path $DataDir 'data'), '/inheritance:r',
-        '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F',
-        '/T', '/C'
-    ) | ForEach-Object { Write-Host "    $_" }
+    # NB: the data\ and config.env ACLs are tightened LATER (step 8), AFTER the
+    # migration has created/opened the database. Locking them here broke SQLite
+    # ("unable to open database file") during migrate.
 
     # --- 2. Stop / remove existing services (idempotent) ---------------------
     foreach ($svc in $Services) {
@@ -149,12 +146,6 @@ try {
     } else {
         Write-Host 'Existing config.env found — keeping current keys.'
     }
-    # Lock config.env (encryption + session keys) to SYSTEM and Administrators.
-    Write-Host 'Securing config.env...'
-    Invoke-Native -Exe 'icacls' -Arguments @(
-        $ConfigPath, '/inheritance:r',
-        '/grant:r', '*S-1-5-18:F', '*S-1-5-32-544:F'
-    ) | ForEach-Object { Write-Host "    $_" }
 
     # --- 4. Migrate + bootstrap ----------------------------------------------
     Write-Host 'Applying database migrations and bootstrapping admin user...'
@@ -211,6 +202,22 @@ try {
         $state = (Get-Service -Name $svc.Id -ErrorAction SilentlyContinue).Status
         Write-Host "  $($svc.Id): $state"
         if ($state -ne 'Running') { $allRunning = $false }
+    }
+
+    # --- 8. Tighten ACLs (AFTER migrate + services are running) --------------
+    # Restrict config.env and the data\ subfolder (keys, database, mail archive)
+    # to administrators by REMOVING standard users, without rebuilding the ACL
+    # (which broke SQLite). We first convert inherited ACEs to explicit so the
+    # removal sticks, then drop BUILTIN\Users (S-1-5-32-545) and Authenticated
+    # Users (S-1-5-11). SYSTEM and Administrators keep their existing full
+    # access, so the services (LocalSystem) are unaffected. Best-effort.
+    Write-Host 'Restricting access to config.env and the data folder...'
+    $dataSub = Join-Path $DataDir 'data'
+    foreach ($target in @($dataSub, $ConfigPath)) {
+        Invoke-Native -Exe 'icacls' -Arguments @($target, '/inheritance:d', '/T', '/C') | Out-Null
+        Invoke-Native -Exe 'icacls' -Arguments @(
+            $target, '/remove:g', '*S-1-5-32-545', '*S-1-5-11', '/T', '/C'
+        ) | Out-Null
     }
 
     # --- First-login details -------------------------------------------------
