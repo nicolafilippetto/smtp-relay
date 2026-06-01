@@ -120,26 +120,33 @@ async def login_form(
     # longer match its own cookie on POST -> 403.
     from ..security import verify_csrf_token
     existing = request.cookies.get(CSRF_COOKIE, "")
-    token = existing if verify_csrf_token(existing) else issue_csrf_token()
 
-    # The render() helper pulls the CSRF token from the request cookie
-    # dict. Because at this point `request.cookies` may still reflect
-    # an old / invalid value, force the template to see `token`
-    # explicitly.
-    response = render(request, "login.html", {"error": None, "csrf_token": token})
-    if token != existing:
-        # `token` originates from issue_csrf_token() (see security.py),
-        # which uses itsdangerous + secrets.token_urlsafe(). It never
-        # contains user-supplied data — CodeQL false positive.
-        response.set_cookie(
-            CSRF_COOKIE,
-            token,  # noqa: S604
-            max_age=get_settings().session_lifetime_seconds,
-            httponly=True,
-            secure=get_settings().cookie_secure,
-            samesite="strict",
-            path="/",
+    if verify_csrf_token(existing):
+        # The incoming cookie is already valid: keep it as-is and do NOT
+        # rewrite the cookie. The value reaching the template is the existing
+        # one, but it is never passed to set_cookie.
+        token = existing
+        return render(
+            request, "login.html", {"error": None, "csrf_token": token}
         )
+
+    # Otherwise mint a brand-new token. Its value comes solely from
+    # issue_csrf_token() (random bytes + HMAC over SECRET_KEY); it is never
+    # derived from any request/user input, so constructing the cookie from it
+    # is safe (no cookie-injection / session-fixation vector).
+    fresh_token = issue_csrf_token()
+    response = render(
+        request, "login.html", {"error": None, "csrf_token": fresh_token}
+    )
+    response.set_cookie(
+        CSRF_COOKIE,
+        fresh_token,
+        max_age=get_settings().session_lifetime_seconds,
+        httponly=True,
+        secure=get_settings().cookie_secure,
+        samesite="strict",
+        path="/",
+    )
     return response
 
 
