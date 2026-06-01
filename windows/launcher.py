@@ -181,6 +181,21 @@ def cmd_ui(_args: argparse.Namespace) -> int:
 
     listens_beyond_loopback = host not in ("127.0.0.1", "::1", "localhost")
 
+    # Keep panel.url in sync with the port we actually serve, so the tray and the
+    # Start-Menu "Open admin panel" shortcut always point at the right port —
+    # even when the user changed SMTP_UI_PORT in config.env by hand and restarted
+    # the service. panel.url lives next to the install (the exe's grandparent
+    # dir); the service runs as SYSTEM and can write there. Best-effort only.
+    if getattr(sys, "frozen", False):
+        try:
+            panel_file = Path(sys.executable).resolve().parent.parent / "panel.url"
+            panel_file.write_text(
+                "[InternetShortcut]\nURL=http://127.0.0.1:%d\n" % port,
+                encoding="ascii",
+            )
+        except Exception:
+            pass
+
     # The native-Windows panel is plain HTTP. Browsers only send Secure cookies
     # over HTTPS (localhost excepted), so when we serve the LAN we must NOT mark
     # the session/CSRF cookies Secure — otherwise non-localhost clients lose

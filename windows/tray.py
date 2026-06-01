@@ -33,7 +33,28 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 SERVICES = ("smtp-relay-relay", "smtp-relay-ui")
-PANEL_URL = "http://127.0.0.1:8000"
+
+
+def panel_url() -> str:
+    """The admin-panel URL, read from panel.url next to the install.
+
+    The installer writes the chosen web port into panel.url, so the tray always
+    opens the right address even if the user picked a non-default port. Falls
+    back to the default if the file is missing/unreadable. (The tray runs as the
+    normal user and cannot read the admin-locked config.env, but panel.url lives
+    in the program folder and is world-readable.)
+    """
+    default = "http://127.0.0.1:8000"
+    try:
+        here = Path(sys.executable if getattr(sys, "frozen", False) else __file__).resolve()
+        for cand in (here.parent.parent / "panel.url", here.parent / "panel.url"):
+            if cand.is_file():
+                for line in cand.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    if line.lower().startswith("url="):
+                        return line.split("=", 1)[1].strip() or default
+    except Exception:
+        pass
+    return default
 
 # Avoid flashing a console window for the helper subprocesses on Windows; the
 # flag does not exist off-Windows, so fall back to 0 to keep this importable.
@@ -133,7 +154,7 @@ def make_icon(state: str) -> Image.Image:
 # -----------------------------------------------------------------------------
 
 def open_panel() -> None:
-    webbrowser.open(PANEL_URL)
+    webbrowser.open(panel_url())
 
 
 def open_data_folder() -> None:

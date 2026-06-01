@@ -25,6 +25,17 @@ function Test-Admin {
         [Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+# The admin-panel URL, read from panel.url (kept in sync with the configured web
+# port by the UI service on each start). Falls back to the default if missing.
+function Get-PanelUrl {
+    $file = Join-Path $PSScriptRoot 'panel.url'
+    if (Test-Path $file) {
+        $line = Get-Content $file | Where-Object { $_ -match '^\s*URL=' } | Select-Object -First 1
+        if ($line) { return ($line -replace '^\s*URL=', '').Trim() }
+    }
+    return 'http://127.0.0.1:8000'
+}
+
 # 'status' is read-only and does not require elevation. The others do.
 if ($Action -ne 'status' -and -not (Test-Admin)) {
     $psi = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Action $Action"
@@ -59,7 +70,7 @@ foreach ($s in $services) {
     }
 }
 Write-Host ''
-Write-Host 'Admin panel: http://127.0.0.1:8000'
+Write-Host "Admin panel: $(Get-PanelUrl)"
 Write-Host ''
 Write-Host 'Press any key to close...'
 $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')

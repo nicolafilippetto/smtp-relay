@@ -22,13 +22,23 @@ deployment.
 
 1. Download `smtp-relay-setup.exe` from the project Releases page.
 2. Run it (you will be prompted for Administrator rights).
-3. Follow the wizard. At the end the installer prints a **temporary admin
-   password** and also saves it to `C:\ProgramData\smtp-relay\FIRST-LOGIN.txt`.
-4. Open **http://127.0.0.1:8000**, log in as `admin` with that password. You
-   will be required to change the password and enrol two-factor authentication
-   (TOTP) on first login.
-5. In the panel, configure your Microsoft 365 (Entra ID) application and your
+3. Follow the wizard. On a **first install** it asks for the **SMTP port**
+   (default `2525` — use `25` for the standard SMTP port) and the **web panel
+   port** (default `8000`). The installer checks each port is free and won't let
+   you continue if one is already in use.
+4. At the end the installer prints a **temporary admin password** and also saves
+   it to `C:\ProgramData\smtp-relay\FIRST-LOGIN.txt`.
+5. Open the panel at the web port you chose (default **http://127.0.0.1:8000**),
+   log in as `admin` with that password. You will be required to change the
+   password and enrol two-factor authentication (TOTP) on first login.
+6. In the panel, configure your Microsoft 365 (Entra ID) application and your
    SMTP accounts — same as the Docker version.
+
+> **Re-running the installer** over an existing install only **updates** the
+> program files; your data, configuration and ports are kept (the port page is
+> skipped). To change the ports later, edit `C:\ProgramData\smtp-relay\config.env`
+> (`SMTP_LISTEN_PORT` / `SMTP_UI_PORT`) and restart the services, or uninstall
+> and reinstall.
 
 > The installer is currently **not code-signed**, so Windows SmartScreen may
 > show an "unknown publisher" warning. Choose *More info → Run anyway*.
