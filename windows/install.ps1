@@ -21,7 +21,11 @@
 [CmdletBinding()]
 param(
     [string]$InstallDir = $PSScriptRoot,
-    [string]$DataDir = (Join-Path $env:ProgramData 'smtp-relay')
+    [string]$DataDir = (Join-Path $env:ProgramData 'smtp-relay'),
+    # Ports chosen in the installer wizard (fresh install only). On an upgrade
+    # the existing config.env is kept and these are ignored.
+    [int]$SmtpPort = 2525,
+    [int]$UiPort = 8000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -60,6 +64,18 @@ function Invoke-Checked {
         throw "$What failed (exit code $LASTEXITCODE). See output above."
     }
     return $output
+}
+
+# Return $true if no process is already listening on the given TCP port.
+function Test-PortFree {
+    param([int]$Port)
+    try {
+        $listener = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue
+        return ($null -eq $listener)
+    } catch {
+        # Get-NetTCPConnection throws when there is no match on some builds.
+        return $true
+    }
 }
 
 # --- Create the data dir, then start logging ---------------------------------
@@ -131,21 +147,55 @@ try {
     }
 
     # --- 3. config.env + key generation (only on first install) --------------
-    if (-not (Test-Path $ConfigPath)) {
-        Write-Host 'Creating config.env and generating secret keys...'
+    $freshConfig = -not (Test-Path $ConfigPath)
+    if ($freshConfig) {
+        # Fresh install: the chosen ports must be free. We already stopped our
+        # own services above, so a listener here belongs to something else.
+        if (-not (Test-PortFree -Port $SmtpPort)) {
+            throw "The SMTP port $SmtpPort is already in use by another program. Re-run the installer and pick a different port."
+        }
+        if (-not (Test-PortFree -Port $UiPort)) {
+            throw "The web port $UiPort is already in use by another program. Re-run the installer and pick a different port."
+        }
+
+        Write-Host "Creating config.env (SMTP port $SmtpPort, web port $UiPort) and generating secret keys..."
         Copy-Item $Template $ConfigPath
         $generated = Invoke-Native -Exe $AppExe -Arguments @('genkey')
         if ($LASTEXITCODE -ne 0) { throw 'genkey failed; cannot create config.env.' }
-        foreach ($line in $generated) {
-            if ("$line" -match '^(ENCRYPTION_KEY|SECRET_KEY)=(.*)$') {
+
+        # Build the full config.env: fill the keys and append the chosen ports as
+        # active (uncommented) settings so the services pick them up.
+        $lines = Get-Content $ConfigPath
+        foreach ($g in $generated) {
+            if ("$g" -match '^(ENCRYPTION_KEY|SECRET_KEY)=(.*)$') {
                 $name = $Matches[1]; $value = $Matches[2]
-                (Get-Content $ConfigPath) -replace "^$name=.*$", "$name=$value" |
-                    Set-Content $ConfigPath -Encoding UTF8
+                $lines = $lines -replace "^$name=.*$", "$name=$value"
             }
         }
+        $lines += @(
+            '',
+            '# Ports chosen during installation.',
+            "SMTP_LISTEN_PORT=$SmtpPort",
+            "SMTP_UI_PORT=$UiPort"
+        )
+        $lines | Set-Content $ConfigPath -Encoding UTF8
     } else {
-        Write-Host 'Existing config.env found — keeping current keys.'
+        Write-Host 'Existing config.env found — keeping current keys and ports.'
+        # Honour the ports already configured for the firewall rules / panel.url.
+        $cfg = Get-Content $ConfigPath
+        $m = $cfg | Where-Object { $_ -match '^\s*SMTP_LISTEN_PORT\s*=\s*(\d+)' }
+        if ($m) { $SmtpPort = [int]$Matches[1] }
+        $m = $cfg | Where-Object { $_ -match '^\s*SMTP_UI_PORT\s*=\s*(\d+)' }
+        if ($m) { $UiPort = [int]$Matches[1] }
     }
+
+    # Record the web URL for shortcuts and the tray (world-readable; the tray
+    # cannot read the admin-locked config.env). 127.0.0.1 keeps the shortcut
+    # working from the machine itself regardless of LAN settings.
+    Set-Content -Path (Join-Path $InstallDir 'panel.url') -Encoding ASCII -Value @(
+        '[InternetShortcut]',
+        "URL=http://127.0.0.1:$UiPort"
+    )
 
     # --- 4. Migrate + bootstrap ----------------------------------------------
     Write-Host 'Applying database migrations and bootstrapping admin user...'
@@ -169,26 +219,26 @@ try {
         Invoke-Checked -Exe $svc.Winsw -Arguments @('install') -What "Service install ($($svc.Id))" | Out-Null
     }
 
-    # --- 6. Firewall rule (SMTP port, LAN only) ------------------------------
-    $smtpPort = 2525
-    $ruleName = 'SMTP Relay (inbound 2525)'
-    Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue |
+    # --- 6. Firewall rules (LAN only) ----------------------------------------
+    # Use a stable rule name and update its port, so changing ports on a future
+    # reinstall does not leave stale rules behind. Recreate from scratch.
+    $smtpRule = 'SMTP Relay (inbound SMTP)'
+    Get-NetFirewallRule -DisplayName $smtpRule -ErrorAction SilentlyContinue |
         Remove-NetFirewallRule -ErrorAction SilentlyContinue
-    Write-Host "Adding firewall rule for TCP $smtpPort (Private/Domain profiles)..."
-    New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Protocol TCP `
-        -LocalPort $smtpPort -Action Allow -Profile Private,Domain | Out-Null
+    Write-Host "Adding firewall rule for TCP $SmtpPort (Private/Domain profiles)..."
+    New-NetFirewallRule -DisplayName $smtpRule -Direction Inbound -Protocol TCP `
+        -LocalPort $SmtpPort -Action Allow -Profile Private,Domain | Out-Null
 
     # Web UI: allowed from the LAN by default (the app itself rejects any
     # non-private client IP). Restrict to the Private + Domain firewall profiles
     # so it is never opened on a Public network. To keep the panel loopback-only,
     # set SMTP_UI_ALLOW_LAN=0 in config.env and this rule is harmless.
-    $uiPort = 8000
-    $uiRule = 'SMTP Relay UI (inbound 8000, LAN)'
+    $uiRule = 'SMTP Relay UI (inbound web, LAN)'
     Get-NetFirewallRule -DisplayName $uiRule -ErrorAction SilentlyContinue |
         Remove-NetFirewallRule -ErrorAction SilentlyContinue
-    Write-Host "Adding firewall rule for TCP $uiPort (Private/Domain profiles)..."
+    Write-Host "Adding firewall rule for TCP $UiPort (Private/Domain profiles)..."
     New-NetFirewallRule -DisplayName $uiRule -Direction Inbound -Protocol TCP `
-        -LocalPort $uiPort -Action Allow -Profile Private,Domain | Out-Null
+        -LocalPort $UiPort -Action Allow -Profile Private,Domain | Out-Null
 
     # --- 7. Start services + verify ------------------------------------------
     foreach ($svc in $Services) {
@@ -221,15 +271,18 @@ try {
     }
 
     # --- First-login details -------------------------------------------------
+    $panelUrl = "http://127.0.0.1:$UiPort"
     if ($tempPassword) {
         $firstLogin = Join-Path $DataDir 'FIRST-LOGIN.txt'
         @(
             'SMTP Relay - first login',
             '=========================',
             '',
-            'Open the admin panel:   http://127.0.0.1:8000',
+            "Open the admin panel:   $panelUrl",
             'Username:               admin',
             "Temporary password:     $tempPassword",
+            '',
+            "SMTP listener port:     $SmtpPort",
             '',
             'You will be required to change this password and enrol two-factor',
             'authentication (TOTP) on first login. Delete this file afterwards.'
@@ -243,7 +296,8 @@ try {
         Write-Host '== Installation finished, but a service is NOT running ==' -ForegroundColor Yellow
         Write-Host "Check the service logs in $DataDir\logs and $logFile"
     }
-    Write-Host 'Admin panel:  http://127.0.0.1:8000'
+    Write-Host "Admin panel:  $panelUrl"
+    Write-Host "SMTP port:    $SmtpPort"
     Write-Host 'Username:     admin'
     if ($tempPassword) {
         Write-Host "Temp password: $tempPassword" -ForegroundColor Yellow

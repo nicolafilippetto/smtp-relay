@@ -94,26 +94,149 @@ Type: dirifempty; Name: "{autodesktop}\{#MyAppName}"
 [Run]
 ; Run the setup script hidden (no PowerShell console window). Everything is
 ; captured to install-log.txt, and the finish-page checkboxes below give the
-; operator the admin password and the panel.
+; operator the admin password and the panel. The chosen ports are passed
+; through (ignored on an upgrade, which keeps the existing config.env).
 Filename: "powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\install.ps1"" -InstallDir ""{app}"""; \
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\install.ps1"" -InstallDir ""{app}"" -SmtpPort {code:GetSmtpPort} -UiPort {code:GetUiPort}"; \
   StatusMsg: "Installing services and initialising the database..."; \
   Flags: runhidden waituntilterminated
 ; On a FRESH install only, offer to open the first-login note (admin password).
 Filename: "{commonappdata}\smtp-relay\FIRST-LOGIN.txt"; \
   Description: "Show the first-login details (admin password)"; \
   Flags: postinstall shellexec nowait skipifsilent; Check: FreshInstall
-; Always offer to open the admin panel.
-Filename: "http://127.0.0.1:8000"; Description: "Open the admin panel now"; \
+; Always offer to open the admin panel (at the chosen / configured web port).
+Filename: "{code:GetPanelUrl}"; Description: "Open the admin panel now"; \
   Flags: postinstall shellexec nowait skipifsilent
 
 [Code]
+var
+  IsUpgrade: Boolean;          { an existing install was detected }
+  PortPage: TInputQueryWizardPage;
+
+{ A new admin (with a one-time password) was created this run -> the file is
+  present. Used to offer opening FIRST-LOGIN.txt only on a real fresh install. }
 function FreshInstall: Boolean;
 begin
-  { install.ps1 deletes any stale FIRST-LOGIN.txt at the start and only writes
-    it when a new admin (with a one-time password) was created this run, so its
-    presence here means this was a fresh install rather than a reinstall. }
   Result := FileExists(ExpandConstant('{commonappdata}\smtp-relay\FIRST-LOGIN.txt'));
+end;
+
+function GetSmtpPort(Param: String): String;
+begin
+  if IsUpgrade then Result := '2525'
+  else Result := Trim(PortPage.Values[0]);
+end;
+
+function GetUiPort(Param: String): String;
+begin
+  if IsUpgrade then Result := '8000'
+  else Result := Trim(PortPage.Values[1]);
+end;
+
+function GetPanelUrl(Param: String): String;
+begin
+  { On a fresh install use the chosen web port; on an upgrade default to 8000
+    (install.ps1 still honours whatever is in the existing config.env). }
+  if IsUpgrade then Result := 'http://127.0.0.1:8000'
+  else Result := 'http://127.0.0.1:' + Trim(PortPage.Values[1]);
+end;
+
+procedure InitializeWizard;
+begin
+  IsUpgrade := FileExists(ExpandConstant('{commonappdata}\smtp-relay\config.env'));
+
+  { Port page — shown only on a fresh install (see ShouldSkipPage). }
+  PortPage := CreateInputQueryPage(wpSelectDir,
+    'Network ports',
+    'Choose the ports SMTP Relay will listen on',
+    'You can keep the defaults or change them. Standard SMTP is port 25; 2525 ' +
+    'avoids needing to free port 25. The web panel default is 8000. The ' +
+    'installer checks each port is free before continuing.');
+  PortPage.Add('SMTP port (mail in):', False);
+  PortPage.Add('Web panel port:', False);
+  PortPage.Values[0] := '2525';
+  PortPage.Values[1] := '8000';
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  { Skip the port page on an upgrade (we keep the existing config.env). }
+  Result := (PageID = PortPage.ID) and IsUpgrade;
+end;
+
+{ Validate the two ports as the user leaves the port page: numeric, 1..65535,
+  distinct, and not already in use on this machine. }
+function ValidatePort(Caption, Value: String): Boolean;
+var
+  n, code: Integer;
+begin
+  Result := False;
+  Value := Trim(Value);
+  if Value = '' then begin
+    MsgBox(Caption + ': please enter a port number.', mbError, MB_OK);
+    exit;
+  end;
+  for code := 1 to Length(Value) do
+    if (Value[code] < '0') or (Value[code] > '9') then begin
+      MsgBox(Caption + ': only digits are allowed.', mbError, MB_OK);
+      exit;
+    end;
+  n := StrToIntDef(Value, -1);
+  if (n < 1) or (n > 65535) then begin
+    MsgBox(Caption + ': the port must be between 1 and 65535.', mbError, MB_OK);
+    exit;
+  end;
+  Result := True;
+end;
+
+{ Returns True if something is already listening on the TCP port (PowerShell). }
+function PortInUse(Port: String): Boolean;
+var
+  rc: Integer;
+begin
+  { exit code 0 = a listener was found = port in use. }
+  Exec('powershell.exe',
+    '-NoProfile -ExecutionPolicy Bypass -Command "if (Get-NetTCPConnection -State Listen -LocalPort ' +
+    Port + ' -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"',
+    '', SW_HIDE, ewWaitUntilTerminated, rc);
+  Result := (rc = 0);
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  smtp, web: String;
+begin
+  Result := True;
+  if (CurPageID = PortPage.ID) and (not IsUpgrade) then
+  begin
+    smtp := Trim(PortPage.Values[0]);
+    web := Trim(PortPage.Values[1]);
+    if not ValidatePort('SMTP port', smtp) then begin Result := False; exit; end;
+    if not ValidatePort('Web panel port', web) then begin Result := False; exit; end;
+    if smtp = web then begin
+      MsgBox('The SMTP port and the web panel port must be different.', mbError, MB_OK);
+      Result := False; exit;
+    end;
+    if PortInUse(smtp) then begin
+      MsgBox('The SMTP port ' + smtp + ' is already in use by another program. Choose a different port.', mbError, MB_OK);
+      Result := False; exit;
+    end;
+    if PortInUse(web) then begin
+      MsgBox('The web panel port ' + web + ' is already in use by another program. Choose a different port.', mbError, MB_OK);
+      Result := False; exit;
+    end;
+  end;
+end;
+
+{ On an upgrade, tell the user up-front what will happen. }
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if (CurPageID = wpReady) and IsUpgrade then
+    MsgBox('SMTP Relay is already installed.' + #13#10#13#10 +
+           'This will UPDATE the program files and keep your existing data, ' +
+           'configuration and ports unchanged.' + #13#10#13#10 +
+           'To change the ports or other settings, either edit ' +
+           'C:\ProgramData\smtp-relay\config.env, or uninstall and reinstall.',
+           mbInformation, MB_OK);
 end;
 
 procedure StopRelayServices;
