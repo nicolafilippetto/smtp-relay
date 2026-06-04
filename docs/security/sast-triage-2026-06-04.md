@@ -16,7 +16,7 @@ corrette o accettate.
 | # | Severità | Tipologia | File:riga | CWE | Esito |
 |---|----------|-----------|-----------|-----|-------|
 | 1 | High   | Hardcoded credentials | `common/models.py:77` | 522 | ❌ Falso positivo |
-| 2 | Medium | Insecure base image version | `relay/Dockerfile:7`, `nginx/Dockerfile:14`, `ui/Dockerfile:7` | 16 | ⚠️ Hardening (rischio basso) |
+| 2 | Medium | Insecure base image version | `relay/Dockerfile:7`, `nginx/Dockerfile:14`, `ui/Dockerfile:7` | 16 | ✅ Risolto |
 | 3 | Medium | XSS — autoescape false | `ui/templating.py:29` | 79 | ❌ Falso positivo |
 | 4 | Medium | Exposure of confidential info (print) | `windows/launcher.py:134-135` | 497 | ❌ Falso positivo (comportamento voluto) |
 | 5 | High   | OS command injection (VB) | `windows/start-tray.vbs:6` | 78 | ❌ Falso positivo |
@@ -24,9 +24,9 @@ corrette o accettate.
 | 7 | High   | No non-root USER in Dockerfile | `nginx/Dockerfile:1` | 266 | ✅ Risolto |
 
 **Esito complessivo:** 6 istanze su 10 (5 tipologie su 7) sono **falsi positivi**.
-1 finding (No non-root USER) è stato **corretto**. Le 3 istanze rimanenti
-(base image non pinnata) sono una *best practice* di hardening a rischio reale
-basso (dettagli sotto).
+Le finding effettivamente valide sono state **corrette**: nginx non-root (#7) e
+il pinning delle immagini base (#2, 3 istanze). Non resta alcuna vulnerabilità
+sfruttabile aperta.
 
 > Nota: le tre finding che AppScan stesso marca come **"Passed"** nel report
 > (#1, #3, #6) coincidono con i falsi positivi più evidenti — il motore le ha
@@ -162,7 +162,7 @@ non viene nemmeno eseguito in produzione: serve solo a rigenerare gli asset.
 
 ---
 
-## Voci effettivamente corrette / accettate
+## Voci effettivamente corrette
 
 ### #7 — No non-root USER in Dockerfile (High, CWE-266) — `nginx/Dockerfile:1` — ✅ Risolto
 
@@ -179,21 +179,24 @@ non privilegiato). È stato corretto:
 
 ---
 
-### #2 — Insecure base image version (Medium, CWE-16) — 3 Dockerfile — ⚠️ Hardening, rischio basso
+### #2 — Insecure base image version (Medium, CWE-16) — 3 Dockerfile — ✅ Risolto
 
-**Finding:** le immagini base sono pinnate a `major.minor`
-(`python:3.12-slim-bookworm`, `nginx:1.29-alpine`) ma non a `major.minor.patch`
-né a un digest SHA256.
+**Finding:** le immagini base erano pinnate a `major.minor`
+(`python:3.12-slim-bookworm`, `nginx:1.29-alpine`) ma non a un digest SHA256 —
+una *best practice* (build riproducibili, protezione da tag mutabili), non una
+vulnerabilità sfruttabile.
 
-**Valutazione:** è una *best practice* (build riproducibili, protezione da tag
-mutabili), **non una vulnerabilità sfruttabile**. Il rischio reale è mitigato dal
-fatto che le immagini Python applicano già le patch di sicurezza del sistema
-operativo in fase di build (`apt-get update && apt-get upgrade -y`).
+**Esito:** tutti e tre i `FROM` sono ora pinnati a un **digest SHA256 immutabile**
+(il tag leggibile è mantenuto a fianco):
 
-**Nota sul trade-off:** il pinning a digest blocca anche gli aggiornamenti di
-sicurezza al rebuild, quindi richiede un processo di aggiornamento gestito
-(es. Renovate/Dependabot). Se la policy aziendale lo richiede, si può pinnare al
-digest `@sha256:...` su tutti e tre i Dockerfile come attività separata.
+- `relay/Dockerfile`, `ui/Dockerfile`: `python:3.12-slim-bookworm@sha256:93ab4b…`
+- `nginx/Dockerfile`: `nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d5…`
+
+Per evitare lo svantaggio del pinning (immagini "congelate" che non ricevono più
+patch), è stato aggiunto **`.github/dependabot.yml`** (ecosistema `docker`,
+cadenza settimanale): i bump dei digest arrivano come PR revisionabili, che il
+workflow `docker-publish` ricompila e ripubblica. Build riproducibili + patch
+mantenute.
 
 ---
 
@@ -203,8 +206,8 @@ digest `@sha256:...` su tutti e tre i Dockerfile come attività separata.
   matching del tool che non considera il contesto (enum scambiata per credenziale,
   `select_autoescape` non risolto, comando CLI di generazione chiavi, script
   privi di input esterni).
-- **1 finding High è stato corretto** (nginx non-root + hardening).
-- **3 finding Medium** (base image) sono hardening a rischio basso, risolvibili su
-  richiesta tramite pinning a digest.
+- **Le finding valide sono state corrette:** nginx non-root + hardening del
+  servizio (#7) e pinning delle immagini base a digest SHA256 con bump
+  automatici via Dependabot (#2).
 
 Non resta alcuna vulnerabilità sfruttabile aperta.
