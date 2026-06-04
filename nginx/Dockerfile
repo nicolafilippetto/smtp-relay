@@ -15,7 +15,10 @@
 # compose file maps the conventional host ports 80/443 onto those.
 # =============================================================================
 
-FROM nginxinc/nginx-unprivileged:1.29-alpine
+# Base image pinned by digest for reproducible builds and supply-chain safety.
+# The tag is kept for readability; Docker resolves the digest. Digest bumps are
+# automated via Dependabot (.github/dependabot.yml).
+FROM nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6
 
 # The unprivileged base image runs as uid 101 ("nginx"). Switch to root only
 # for the build steps that need it, then drop back.
