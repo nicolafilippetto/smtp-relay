@@ -18,7 +18,10 @@
     <p class="flash flash-info">Settings saved.</p>
   {% endif %}
   {% if request.query_params.get('tested') == 'ok' %}
-    <p class="flash flash-info">Test alert sent successfully.</p>
+    <p class="flash flash-info">
+      Test alert queued — the relay will deliver it; check
+      <a href="/queue">Queue</a> and <a href="/archive">Archive</a>.
+    </p>
   {% elif request.query_params.get('tested') == 'fail' %}
     <p class="flash flash-warn">
       Test alert FAILED. Reason:
@@ -45,14 +48,20 @@
         <input type="email" name="admin_email_from" maxlength="320"
                value="{{ row.admin_email_from or '' if row else '' }}">
         <span class="small muted">
-          Must be one of the addresses in
-          <a href="/config/senders"><strong>Authorised senders</strong></a>
-          with status enabled, otherwise Graph will reject the alert.
-          {% if senders %}
-            Available:
-            {% for s in senders %}<code>{{ s.address }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.
+          {% if check_enabled %}
+            Must be one of the addresses in
+            <a href="/config/senders"><strong>Authorised senders</strong></a>
+            with status enabled, otherwise Graph will reject the alert.
+            {% if senders %}
+              Available:
+              {% for s in senders %}<code>{{ s.address }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.
+            {% else %}
+              <strong>No enabled authorised senders configured yet.</strong>
+            {% endif %}
           {% else %}
-            <strong>No enabled authorised senders configured yet.</strong>
+            The <a href="/config/senders"><strong>authorised-senders check is
+            disabled</strong></a>, so any mailbox the Graph app is allowed to
+            send as is accepted here.
           {% endif %}
         </span>
       </label>
@@ -164,8 +173,9 @@
 <section class="card card-narrow">
   <h2>Send test alert</h2>
   <p class="small muted">
-    Sends a fixed test message to the configured recipient using the
-    configured sender. Use this after saving to verify the wiring.
+    Queues a fixed test message to the configured recipient(s) using the
+    configured sender. It is delivered by the relay like any other mail and
+    appears under Queue and Archive. Use this after saving to verify the wiring.
   </p>
   <form method="post" action="/config/notifications/test">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

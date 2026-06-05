@@ -749,6 +749,7 @@ async def notifications_view(
             "session": session,
             "row": row,
             "senders": senders,
+            "check_enabled": row.smtp_sender_check_enabled if row else True,
             "error": None,
             "flash": None,
         },
@@ -815,8 +816,17 @@ async def notifications_save(
                 )
             ).all()
         }
+        settings_row = await s.get(Settings, 1)
+    check_enabled = settings_row.smtp_sender_check_enabled if settings_row else True
 
-    if data.admin_email_from and data.admin_email_from not in senders_enabled:
+    # The From address only needs to be an enabled Authorised Sender while
+    # sender-check enforcement is on — mirroring the relay's own gate. With
+    # enforcement off the relay accepts any sender, so this is relaxed too.
+    if (
+        check_enabled
+        and data.admin_email_from
+        and data.admin_email_from not in senders_enabled
+    ):
         return await _render_notifications(
             request,
             session,
@@ -892,6 +902,7 @@ async def _render_notifications(request, session, *, error: str):
             "session": session,
             "row": row,
             "senders": senders,
+            "check_enabled": row.smtp_sender_check_enabled if row else True,
             "error": error,
             "flash": None,
         },

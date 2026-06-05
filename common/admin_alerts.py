@@ -14,9 +14,10 @@ Two flows:
    The send is gated by `Settings.alert_last_digest_at` so a long-
    running relay never doubles up.
 
-Both flows share `_send_mail()`, which builds an RFC 5322 message and
-delivers it through the configured Graph tenant. Failures are recorded
-in the audit log and never raise — alerts are best-effort.
+Both flows share `send_mail()`, which builds an RFC 5322 message and
+queues it like any other mail; the relay's queue worker then delivers it
+through the configured Graph tenant and archives the `.eml`. Failures are
+recorded in the audit log and never raise — alerts are best-effort.
 
 Tests: covered by integration tests against a fake Graph endpoint;
 unit tests focus on the digest section assembly because that is the
@@ -26,6 +27,7 @@ only piece with non-trivial branching.
 from __future__ import annotations
 
 import asyncio
+import base64
 import datetime as _dt
 import html as _html
 import json
@@ -40,9 +42,7 @@ from sqlalchemy import func, select
 
 from . import archive
 from .audit import record as audit_record
-from .crypto import decrypt_str
 from .db import session_scope
-from .graph_client import GraphClient, GraphError
 from .models import (
     AuditEventType,
     AuditLog,
@@ -418,19 +418,41 @@ def _event_section(row: AuditLog, kind: str) -> DigestSection:
 # Sending
 # =============================================================================
 
-async def _build_graph_client() -> GraphClient | None:
-    """Return a GraphClient using the saved tenant config, or None if unconfigured."""
-    async with session_scope() as s:
-        cfg = await s.get(TenantConfig, 1)
-        if (
-            cfg is None
-            or not cfg.tenant_id
-            or not cfg.client_id
-            or not cfg.client_secret_enc
-        ):
-            return None
-        secret = decrypt_str(cfg.client_secret_enc)
-    return GraphClient(cfg.tenant_id, cfg.client_id, secret)
+async def _enqueue_alert(
+    *,
+    sender_addr: str,
+    recipients: list[str],
+    subject: str,
+    raw: bytes,
+) -> bool:
+    """Persist an alert as a normal queue message.
+
+    The relay's queue worker then sends it through Graph and archives the
+    `.eml` on success, exactly like any mail submitted over SMTP — so
+    alerts (including the test alert) show up under Queue and Archive and
+    inherit the same retry/backoff policy. Returns True once queued.
+    """
+    encoded = base64.b64encode(raw).decode("ascii")
+    try:
+        async with session_scope() as s:
+            s.add(
+                MailQueue(
+                    sender=sender_addr,
+                    recipients_json=json.dumps(recipients),
+                    subject=(subject or "")[:998] or None,
+                    raw_mime_b64=encoded,
+                    status=MailStatus.PENDING,
+                    attempts=0,
+                    next_attempt_at=_utcnow(),
+                    source_ip=None,
+                    source_username="(admin alert)",
+                )
+            )
+        return True
+    except Exception as exc:  # pragma: no cover - defensive
+        _log.exception("Failed to enqueue admin alert")
+        await _audit_send_failure(f"Enqueue failed: {exc!r}")
+        return False
 
 
 async def _sender_is_authorised(s, address: str) -> bool:
@@ -595,7 +617,11 @@ async def send_mail(
     sections: list[DigestSection],
     now: _dt.datetime | None = None,
 ) -> bool:
-    """Send a multipart (text + HTML) alert via Graph. Returns True on success."""
+    """Build a multipart (text + HTML) alert and queue it for delivery.
+
+    Returns True once the message is queued. Actual delivery (and
+    archiving) is performed by the relay's queue worker.
+    """
     when = now or _utcnow()
     text = _render_text(category, sections, when)
     html = _render_html(category, sections, when)
@@ -615,37 +641,33 @@ async def send_mail(
     msg.add_alternative(html, subtype="html")
     raw = msg.as_bytes(policy=email.policy.SMTP)
 
-    client = await _build_graph_client()
-    if client is None:
-        await _audit_send_failure("Tenant configuration is incomplete.")
-        return False
-    try:
-        # Graph's sendMail uses the bare address as the path segment;
-        # the display name only lives in the MIME header.
-        await asyncio.to_thread(client.send_mime, sender_addr, raw)
-        return True
-    except GraphError as exc:
-        _log.warning("Admin alert send failed: %s", exc)
-        await _audit_send_failure(str(exc))
-        return False
-    except Exception as exc:  # pragma: no cover - defensive
-        _log.exception("Admin alert send failed unexpectedly")
-        await _audit_send_failure(f"Unexpected error: {exc!r}")
-        return False
+    return await _enqueue_alert(
+        sender_addr=sender_addr,
+        recipients=recipients,
+        subject=subject,
+        raw=raw,
+    )
 
 
 async def can_send(settings: Settings) -> tuple[bool, str | None]:
-    """Cheap pre-flight: are recipient/sender configured and sender authorised?"""
+    """Cheap pre-flight: are recipient/sender configured (and authorised)?
+
+    The "sender must be an enabled Authorised Sender" rule mirrors the
+    relay's own From: gate, so it is skipped when sender-check
+    enforcement is disabled (Settings.smtp_sender_check_enabled is
+    False) — exactly as the relay then accepts any sender.
+    """
     if not settings.admin_email_to:
         return False, "admin_email_to is not set"
     if not settings.admin_email_from:
         return False, "admin_email_from is not set"
-    async with session_scope() as s:
-        if not await _sender_is_authorised(s, settings.admin_email_from):
-            return False, (
-                f"Sender {settings.admin_email_from!r} is not in the enabled "
-                "Authorised Senders list."
-            )
+    if settings.smtp_sender_check_enabled:
+        async with session_scope() as s:
+            if not await _sender_is_authorised(s, settings.admin_email_from):
+                return False, (
+                    f"Sender {settings.admin_email_from!r} is not in the enabled "
+                    "Authorised Senders list."
+                )
     return True, None
 
 
@@ -829,4 +851,4 @@ async def send_test_alert() -> tuple[bool, str | None]:
     )
     if sent:
         return True, None
-    return False, "Graph send failed; see Audit page for details."
+    return False, "Could not queue the test alert; see Audit page for details."
