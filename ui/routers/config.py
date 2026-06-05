@@ -65,7 +65,8 @@ _log = logging.getLogger("ui.config")
 
 @router.get("", include_in_schema=False)
 async def config_root(request: Request, session: SessionPayload = Depends(require_user)):
-    return RedirectResponse("/config/tenant", status_code=303)
+    # SMTP accounts is the first (most-used) config tab, so land there.
+    return RedirectResponse("/smtp-accounts", status_code=303)
 
 
 @router.get("/tenant", include_in_schema=False)

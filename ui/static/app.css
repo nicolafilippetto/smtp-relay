@@ -249,8 +249,21 @@ fieldset legend {
   margin: 4px 0 8px;
 }
 .inline-form input[type=text],
-.inline-form input[type=email] {
+.inline-form input[type=email],
+.inline-form input[type=password] {
   flex: 1 1 180px;
+  padding: 3px 6px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+}
+
+/* Reusable inline text/password input matching the classic field look,
+   for inputs that live outside a <label> (e.g. table-row actions). */
+.input {
   padding: 3px 6px;
   font: inherit;
   font-size: 13px;
