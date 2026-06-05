@@ -4,6 +4,37 @@
 <h1>Configuration</h1>
 {% with active='senders' %}{% include "_confignav.html" %}{% endwith %}
 
+<section class="card card-danger">
+  <h2>⚠ Sender authorization</h2>
+  {% if not check_enabled %}
+    <p class="alert alert-err">
+      <strong>Sender authorization is currently DISABLED.</strong>
+      The relay accepts mail from <strong>ANY</strong> sender and ignores
+      the allow-list below. Re-enable it as soon as the reason for
+      disabling it no longer applies.
+    </p>
+  {% else %}
+    <p class="small muted">
+      Enforcement is <strong>ON</strong>: only the addresses listed below
+      may be used as <code>From:</code>. Disabling this check makes the
+      relay accept <strong>any</strong> sender — only do this as a
+      deliberate, temporary measure.
+    </p>
+  {% endif %}
+  <form method="post" action="/config/senders/enforcement"
+        {% if check_enabled %}data-confirm="This makes the relay accept mail from ANY sender, bypassing the authorised-senders list. Continue?"{% endif %}>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="check check-danger">
+      <input type="checkbox" name="accept_all_senders" value="1"
+             {% if not check_enabled %}checked{% endif %}>
+      Accept any sender (disable the authorised-senders check) — I accept the risk
+    </label>
+    <div class="row-actions">
+      <button type="submit" class="btn btn-danger">Apply</button>
+    </div>
+  </form>
+</section>
+
 <section class="card">
   <h2>Authorised senders</h2>
   <p class="small muted">
@@ -56,7 +87,11 @@
     </tbody>
   </table>
   {% else %}
+  {% if check_enabled %}
   <p class="muted">No authorised senders yet. The relay will reject every message.</p>
+  {% else %}
+  <p class="muted">No authorised senders yet — but the check above is disabled, so every sender is accepted.</p>
+  {% endif %}
   {% endif %}
 </section>
 {% endblock %}

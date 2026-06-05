@@ -206,13 +206,26 @@ async def verify_smtp_credentials(
 
 
 async def is_sender_authorised(sender: str) -> bool:
-    """True iff `sender` is in the authorised-senders list (enabled)."""
+    """True iff `sender` is allowed as a From: address.
+
+    Normally that means `sender` is an enabled `AuthorisedSender`. The
+    check can be turned off globally via
+    `Settings.smtp_sender_check_enabled = False`, in which case ANY
+    sender is accepted. That toggle never bypasses authentication or the
+    IP whitelist (those are enforced separately in `handle_MAIL`); it
+    only relaxes the From: address allow-list.
+    """
     from common.models import AuthorisedSender  # local import to keep top clean
 
-    if not sender:
-        return False
-    norm = sender.strip().lower()
     async with session_scope() as session:
+        settings = await session.scalar(select(Settings).where(Settings.id == 1))
+        if settings is not None and not settings.smtp_sender_check_enabled:
+            # Enforcement disabled: accept any sender regardless.
+            return True
+
+        if not sender:
+            return False
+        norm = sender.strip().lower()
         row = await session.scalar(
             select(AuthorisedSender).where(
                 AuthorisedSender.is_enabled.is_(True),

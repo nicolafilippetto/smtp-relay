@@ -537,6 +537,10 @@ async def password_submit(
                 {"error": "Current password is incorrect."},
                 status_code=400,
             )
+        # Remember whether this was the forced first-login change so we can
+        # send the operator straight to the dashboard afterwards instead of
+        # back to the account page.
+        was_forced_change = user.must_change_password
         user.password_hash = hash_password(new_password)
         user.must_change_password = False
         # NB: kept as raw audit_record because _client_ip() respects the
@@ -552,6 +556,10 @@ async def password_submit(
             source_ip=_client_ip(request),
             details={"section": "account", "action": "change_password"},
         )
+    # After the forced first-login change, land on the dashboard; for a
+    # voluntary change from the account page, stay there with a confirmation.
+    if was_forced_change:
+        return RedirectResponse("/dashboard", status_code=303)
     return RedirectResponse("/account?saved=1", status_code=303)
 
 
