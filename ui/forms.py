@@ -64,7 +64,7 @@ class AdminNotificationsIn(BaseModel):
     alert_admin_password_change: bool = False
     alert_smtp_password_change: bool = False
 
-    @field_validator("admin_email_to", "admin_email_from")
+    @field_validator("admin_email_from")
     @classmethod
     def _valid_email_or_blank(cls, v: str) -> str:
         v = (v or "").strip().lower()
@@ -73,6 +73,31 @@ class AdminNotificationsIn(BaseModel):
         if not _EMAIL_RE.match(v):
             raise ValueError("Not a valid email address.")
         return v
+
+    @field_validator("admin_email_to")
+    @classmethod
+    def _valid_recipients(cls, v: str) -> str:
+        """Accept one or more recipients separated by ';' (or ',').
+
+        Each address is validated and lower-cased; duplicates are
+        dropped while preserving order. The canonical stored form is
+        '; '-joined so it round-trips cleanly back into the form field.
+        """
+        v = (v or "").strip()
+        if not v:
+            return ""
+        out: list[str] = []
+        for chunk in re.split(r"[;,]", v):
+            addr = chunk.strip().lower()
+            if not addr:
+                continue
+            if not _EMAIL_RE.match(addr):
+                raise ValueError(f"Not a valid email address: {addr}")
+            if addr not in out:
+                out.append(addr)
+        if not out:
+            return ""
+        return "; ".join(out)
 
     @field_validator("alert_daily_time")
     @classmethod

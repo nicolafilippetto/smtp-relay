@@ -1,7 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Edit {{ row.username }}{% endblock %}
+{% block title %}Edit {{ row.username }} — Config{% endblock %}
 {% block content %}
-<h1>Edit SMTP account</h1>
+<h1>Configuration</h1>
+{% with active='accounts' %}{% include "_confignav.html" %}{% endwith %}
+
+<h2>Edit SMTP account</h2>
 
 <section class="card card-narrow">
   <p class="small muted">

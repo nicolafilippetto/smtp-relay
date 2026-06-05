@@ -58,8 +58,12 @@
       </label>
       <label>
         Recipient email (To)
-        <input type="email" name="admin_email_to" maxlength="320"
+        <input type="text" name="admin_email_to" maxlength="1024"
+               placeholder="alerts@example.com; ops@example.com"
                value="{{ row.admin_email_to or '' if row else '' }}">
+        <span class="small muted">
+          One or more addresses separated by <code>;</code> (semicolon).
+        </span>
       </label>
     </fieldset>
 

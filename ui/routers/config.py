@@ -272,11 +272,52 @@ async def senders_view(
                 select(AuthorisedSender).order_by(AuthorisedSender.address)
             )
         ).all()
+        settings = await s.get(Settings, 1)
+        check_enabled = settings.smtp_sender_check_enabled if settings else True
     return render(
         request,
         "config_senders.html",
-        {"session": session, "rows": rows, "error": None},
+        {
+            "session": session,
+            "rows": rows,
+            "check_enabled": check_enabled,
+            "error": None,
+        },
     )
+
+
+@router.post(
+    "/senders/enforcement",
+    include_in_schema=False,
+    dependencies=[Depends(require_csrf), Depends(require_user)],
+)
+async def senders_enforcement(
+    request: Request,
+    accept_all_senders: bool = Form(False),
+    session: SessionPayload = Depends(require_user),
+):
+    """Toggle the authorised-senders allow-list enforcement.
+
+    `accept_all_senders` checked => enforcement OFF (relay accepts any
+    From: address). This is a deliberately risky operation; it is gated
+    by the usual admin auth + CSRF and recorded in the audit log.
+    """
+    check_enabled = not accept_all_senders
+    async with session_scope() as s:
+        row = await s.get(Settings, 1)
+        if row is None:
+            row = Settings(id=1)
+            s.add(row)
+        row.smtp_sender_check_enabled = check_enabled
+        await audit_config_change(
+            s, session, request,
+            details={
+                "section": "senders",
+                "action": "set_enforcement",
+                "sender_check_enabled": check_enabled,
+            },
+        )
+    return RedirectResponse("/config/senders", status_code=303)
 
 
 @router.post(
@@ -295,10 +336,17 @@ async def senders_add(
     except ValidationError as exc:
         async with session_scope() as s:
             rows = (await s.scalars(select(AuthorisedSender))).all()
+            settings = await s.get(Settings, 1)
+            check_enabled = settings.smtp_sender_check_enabled if settings else True
         return render(
             request,
             "config_senders.html",
-            {"session": session, "rows": rows, "error": _first_error(exc)},
+            {
+                "session": session,
+                "rows": rows,
+                "check_enabled": check_enabled,
+                "error": _first_error(exc),
+            },
             status_code=400,
         )
 

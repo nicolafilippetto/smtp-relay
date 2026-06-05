@@ -570,6 +570,21 @@ def _format_from(address: str, display_name: str | None) -> str:
     return formataddr((name, address))
 
 
+def _parse_recipients(recipient: str) -> list[str]:
+    """Split a stored recipient string into individual addresses.
+
+    The UI stores recipients '; '-separated, but we accept ',' too for
+    robustness. Blank entries are dropped and duplicates removed while
+    preserving order.
+    """
+    out: list[str] = []
+    for chunk in re.split(r"[;,]", recipient or ""):
+        addr = chunk.strip()
+        if addr and addr not in out:
+            out.append(addr)
+    return out
+
+
 async def send_mail(
     *,
     sender_addr: str,
@@ -585,9 +600,16 @@ async def send_mail(
     text = _render_text(category, sections, when)
     html = _render_html(category, sections, when)
 
+    recipients = _parse_recipients(recipient)
+    if not recipients:
+        await _audit_send_failure("No valid recipient address configured.")
+        return False
+
     msg = EmailMessage()
     msg["From"] = _format_from(sender_addr, sender_name)
-    msg["To"] = recipient
+    # RFC 5322 address lists are comma-separated; Graph parses the To
+    # header of the raw MIME to determine the actual recipients.
+    msg["To"] = ", ".join(recipients)
     msg["Subject"] = subject
     msg.set_content(text)
     msg.add_alternative(html, subtype="html")

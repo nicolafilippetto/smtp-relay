@@ -226,6 +226,16 @@ class Settings(Base):
         Boolean, nullable=False, default=True
     )
 
+    # Authorised-senders enforcement. When True (default) the relay only
+    # accepts mail whose From: address is an enabled AuthorisedSender.
+    # When False the check is bypassed and ANY sender is accepted — a
+    # deliberately risky operation exposed in the UI with a warning.
+    # NB: this never bypasses SMTP authentication / IP whitelisting; it
+    # only relaxes the From: address allow-list.
+    smtp_sender_check_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+
     # SMTP ban policy.
     smtp_ban_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     smtp_ban_duration_min: Mapped[int] = mapped_column(
@@ -273,10 +283,12 @@ class Settings(Base):
     # ---------------------------------------------------------------
     # Admin notifications
     # ---------------------------------------------------------------
-    # Recipient + sender for alert mails. Sender must be an enabled
-    # AuthorisedSender, otherwise Graph will reject the send.
+    # Recipient(s) + sender for alert mails. Sender must be an enabled
+    # AuthorisedSender, otherwise Graph will reject the send. The
+    # recipient field accepts several addresses separated by ';' and is
+    # therefore sized generously.
     admin_email_to: Mapped[Optional[str]] = mapped_column(
-        String(320), nullable=True
+        String(1024), nullable=True
     )
     admin_email_from: Mapped[Optional[str]] = mapped_column(
         String(320), nullable=True

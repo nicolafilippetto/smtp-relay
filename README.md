@@ -208,11 +208,13 @@ Browse to `https://<your-server-ip>/`. Accept the self-signed certificate warnin
 
 *Config → Authorised senders* — add each mailbox address the relay is allowed to send *as*. Any `MAIL FROM` not on this list is rejected with `550 Sender not authorized`.
 
+> A toggle at the top of that page can **disable the sender check entirely**, making the relay accept *any* `MAIL FROM`. This is a deliberately risky option (shown in red, with a confirmation) intended only as a temporary measure — it never bypasses SMTP authentication or the IP whitelist, only the From-address allow-list. The change is recorded in the audit log.
+
 ### 8. Configure SMTP client authentication
 
 Two modes available under *Config → Settings* (at least one must be enabled):
 
-- **Local credentials** — create SMTP accounts in the UI and configure your devices with those credentials.
+- **Local credentials** — create SMTP accounts under *Config → SMTP accounts* and configure your devices with those credentials.
 - **IP whitelist** — add trusted CIDR ranges; devices from those IPs can send without credentials.
 
 ### 9. Send a test message
@@ -305,8 +307,7 @@ Everything happens in the Entra admin center. No Exchange Online configuration n
 - **Queue** — filter by status (`pending / sending / sent / failed / dead`). Retry individual messages or all dead ones at once.
 - **Archive** — browse by date, preview headers and body, download the raw `.eml`, or resend.
 - **Audit log** — filter by event type, outcome, user, IP, date. Export as CSV.
-- **SMTP accounts** — create, edit, enable/disable, delete.
-- **Config → Bans** — view and clear active IP and username bans.
+- **Config** — all settings in one place: SMTP accounts, IP whitelist, authorised senders, tenant, notifications, users, global settings and bans.
 
 ---
 
