@@ -46,7 +46,12 @@ ENTRYPOINT ["/bin/sh", "-c", "\
       --host 0.0.0.0 \
       --port 8000 \
       --proxy-headers \
-      --forwarded-allow-ips='*' \
+      --forwarded-allow-ips=${FORWARDED_ALLOW_IPS:-127.0.0.1} \
       --no-server-header \
       --log-config=ui/log_config.json \
 "]
+# NB: --forwarded-allow-ips must list ONLY the reverse proxy (nginx) address so
+# uvicorn trusts X-Forwarded-For from it and nobody else. docker-compose pins
+# nginx to a static address and passes it via FORWARDED_ALLOW_IPS. Never set
+# this to '*' in production: combined with a proxy that forwards client headers
+# it would let any client spoof its source IP.

@@ -19,8 +19,10 @@ before the dashboard unlocks.
 
 from __future__ import annotations
 
+import hmac
 import io
 import logging
+import time
 
 import pyotp
 import qrcode
@@ -40,7 +42,8 @@ from common.models import (
     BanScope,
     User,
 )
-from common.passwords import hash_password, verify_password
+from common.crypto import CryptoError, decrypt_str, encrypt_str
+from common.passwords import DUMMY_PASSWORD_HASH, hash_password, verify_password
 
 from ..config import get_settings
 from ..security import (
@@ -99,6 +102,61 @@ def _clear_session_cookies(response: Response) -> None:
 
 def _client_ip(request: Request) -> str:
     return get_remote_address(request) or ""
+
+
+# -----------------------------------------------------------------------------
+# TOTP secret storage + one-time-use verification
+# -----------------------------------------------------------------------------
+
+def _encrypt_totp_secret(plain: str) -> str:
+    """Fernet-encrypt a freshly generated TOTP secret for storage at rest."""
+    return encrypt_str(plain)
+
+
+def _load_totp_secret(stored: str | None) -> str | None:
+    """Return the plaintext TOTP secret from its stored form.
+
+    Encrypted (current) values are decrypted; a value that is not a valid
+    Fernet token is assumed to be a legacy plaintext secret and returned as-is
+    (it is re-encrypted on the next enrolment/reset).
+    """
+    if not stored:
+        return None
+    try:
+        return decrypt_str(stored)
+    except CryptoError:
+        return stored
+
+
+def _verify_totp_consume(user: User, code: str) -> bool:
+    """Verify a TOTP code and enforce single-use within its validity window.
+
+    Returns True on success and advances ``user.totp_last_counter`` to the
+    matched step, so the same code (or one from an earlier step) cannot be
+    replayed. Keeps a +/-1 step tolerance for clock skew. The caller's DB
+    session must be open so the advanced counter is persisted on commit.
+    """
+    secret = _load_totp_secret(user.totp_secret)
+    if not secret:
+        return False
+    code = (code or "").strip()
+    if not code.isdigit():
+        return False
+    totp = pyotp.TOTP(secret)
+    now = int(time.time())
+    step = now // totp.interval
+    matched: int | None = None
+    for offset in (0, -1, 1):
+        if hmac.compare_digest(str(totp.at(now, offset)), code):
+            matched = step + offset
+            break
+    if matched is None:
+        return False
+    last = user.totp_last_counter
+    if last is not None and matched <= last:
+        return False  # replay of an already-consumed (or older) code
+    user.totp_last_counter = matched
+    return True
 
 
 # -----------------------------------------------------------------------------
@@ -209,11 +267,13 @@ async def login_submit(
             )
 
         user = await s.scalar(select(User).where(User.username == username))
-        ok = (
-            user is not None
-            and user.is_active
-            and verify_password(password, user.password_hash)
-        )
+        if user is not None and user.is_active:
+            ok = verify_password(password, user.password_hash)
+        else:
+            # Equalize timing on the unknown/disabled-user path so it costs the
+            # same as a wrong-password check (prevents username enumeration).
+            verify_password(password, DUMMY_PASSWORD_HASH)
+            ok = False
 
         if not ok:
             banned_ip = False
@@ -305,9 +365,12 @@ async def totp_enrol_form(
         if user is None:
             return RedirectResponse("/login", status_code=303)
         if user.totp_secret is None:
-            user.totp_secret = pyotp.random_base32()
+            plain = pyotp.random_base32()
+            user.totp_secret = _encrypt_totp_secret(plain)
             await s.flush()
-        secret = user.totp_secret
+        else:
+            plain = _load_totp_secret(user.totp_secret)
+        secret = plain
         username = user.username
 
     uri = pyotp.totp.TOTP(secret).provisioning_uri(
@@ -338,7 +401,7 @@ async def totp_enrol_submit(
         user = await s.get(User, session.user_id)
         if user is None or user.totp_secret is None:
             return RedirectResponse("/login", status_code=303)
-        if not pyotp.TOTP(user.totp_secret).verify(code.strip(), valid_window=1):
+        if not _verify_totp_consume(user, code):
             await audit_record(
                 s,
                 event_type=AuditEventType.TOTP_FAIL,
@@ -348,15 +411,16 @@ async def totp_enrol_submit(
                 details={"stage": "enrolment"},
             )
             import datetime as _dt
-            # Reshow the form with the same QR.
-            uri = pyotp.totp.TOTP(user.totp_secret).provisioning_uri(
+            # Reshow the form with the same QR (decrypt the stored secret).
+            plain = _load_totp_secret(user.totp_secret)
+            uri = pyotp.totp.TOTP(plain).provisioning_uri(
                 name=user.username, issuer_name=get_settings().app_name
             )
             return render(
                 request,
                 "totp_enrol.html",
                 {
-                    "secret": user.totp_secret,
+                    "secret": plain,
                     "qr_svg": _qr_svg(uri),
                     "error": "Incorrect code. Try again.",
                 },
@@ -422,7 +486,7 @@ async def totp_submit(
         if user is None or user.totp_secret is None:
             return RedirectResponse("/login", status_code=303)
 
-        valid = pyotp.TOTP(user.totp_secret).verify(code.strip(), valid_window=1)
+        valid = _verify_totp_consume(user, code)
         if not valid:
             await audit_record(
                 s,

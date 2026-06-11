@@ -32,7 +32,7 @@ from common.models import (
     SmtpAccount,
 )
 from common.netutils import ip_matches_any
-from common.passwords import verify_password
+from common.passwords import DUMMY_PASSWORD_HASH, verify_password
 
 _log = logging.getLogger("relay.auth")
 
@@ -115,11 +115,14 @@ async def verify_smtp_credentials(
             select(SmtpAccount).where(SmtpAccount.username == username)
         )
 
-        ok = (
-            account is not None
-            and account.is_enabled
-            and verify_password(password, account.password_hash)
-        )
+        if account is not None and account.is_enabled:
+            ok = verify_password(password, account.password_hash)
+        else:
+            # Unknown or disabled account: still run one bcrypt verification
+            # against a dummy hash so the response time matches the
+            # wrong-password path. Prevents username enumeration via timing.
+            verify_password(password, DUMMY_PASSWORD_HASH)
+            ok = False
 
         if ok:
             # Per-account IP binding: if the account has a non-empty

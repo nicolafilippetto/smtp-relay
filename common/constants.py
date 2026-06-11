@@ -40,6 +40,15 @@ SMTP_BAN_THRESHOLD_DEFAULT = 5
 SMTP_BAN_DURATION_MIN_DEFAULT = 30
 
 # -----------------------------------------------------------------------------
+# SMTP message limits
+# -----------------------------------------------------------------------------
+# Maximum number of envelope recipients accepted for a single message. A hard
+# anti-bombing backstop, independent of the (configurable) inbound rate limiter:
+# it caps the fan-out of any one DATA so a single message cannot address an
+# unbounded recipient list. Override at runtime with SMTP_MAX_RECIPIENTS.
+SMTP_MAX_RECIPIENTS_DEFAULT = 100
+
+# -----------------------------------------------------------------------------
 # Queue retry policy
 # -----------------------------------------------------------------------------
 QUEUE_MAX_ATTEMPTS_DEFAULT = 3

@@ -216,10 +216,25 @@ async def export_csv(
 # Low-level helpers
 # -----------------------------------------------------------------------------
 
+def _csv_safe(value) -> str:
+    """Neutralise spreadsheet formula injection.
+
+    Audit fields such as `username` (an attacker-chosen SMTP login on a failed
+    AUTH) or `details` are attacker-influenced. A cell that a spreadsheet would
+    parse as a formula — one starting with =, +, -, @, or a control char — is
+    prefixed with an apostrophe so it is rendered literally instead of executed
+    when an operator opens the exported CSV in Excel / LibreOffice / Sheets.
+    """
+    s = "" if value is None else str(value)
+    if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + s
+    return s
+
+
 def _csv_row(values: list) -> bytes:
     buf = io.StringIO()
     writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
-    writer.writerow([str(v) if v is not None else "" for v in values])
+    writer.writerow([_csv_safe(v) for v in values])
     return buf.getvalue().encode("utf-8")
 
 

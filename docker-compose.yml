@@ -17,6 +17,11 @@ services:
       ADMIN_RESET: ${ADMIN_RESET:-0}
       ADMIN_NEW_PASSWORD: ${ADMIN_NEW_PASSWORD:-}
       APP_NAME: ${APP_NAME:-SMTP Relay}
+      # Address uvicorn trusts X-Forwarded-For from: the nginx container's
+      # pinned static IP (see the nginx service + network ipam below). Trusting
+      # only the proxy — not '*' — prevents source-IP spoofing via a forged
+      # X-Forwarded-For (ban evasion, audit-log poisoning).
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.28.0.10}
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:
@@ -45,6 +50,7 @@ services:
       SMTP_LISTEN_HOST: "0.0.0.0"
       SMTP_LISTEN_PORT: "2525"
       SMTP_MAX_MESSAGE_SIZE: ${SMTP_MAX_MESSAGE_SIZE:-31457280}
+      SMTP_MAX_RECIPIENTS: ${SMTP_MAX_RECIPIENTS:-100}
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:
@@ -83,7 +89,9 @@ services:
     depends_on:
       - ui
     networks:
-      - relay-internal
+      relay-internal:
+        # Pinned so the UI can trust X-Forwarded-For from exactly this address.
+        ipv4_address: 172.28.0.10
 
 volumes:
   data:
@@ -95,3 +103,9 @@ networks:
   relay-internal:
     name: smtp-relay-internal
     driver: bridge
+    ipam:
+      config:
+        # Fixed subnet so nginx can hold a static IP (172.28.0.10) that the UI
+        # trusts for X-Forwarded-For. Change here + in FORWARDED_ALLOW_IPS if
+        # this range collides with an existing network on the host.
+        - subnet: 172.28.0.0/24
