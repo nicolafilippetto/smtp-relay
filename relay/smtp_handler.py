@@ -156,8 +156,10 @@ async def _async_auth_check(ip: str | None, username: str, password: str):
 class RelayHandler:
     """aiosmtpd handler; one instance serves the lifetime of the process."""
 
-    def __init__(self, *, max_message_size: int) -> None:
+    def __init__(self, *, max_message_size: int, max_recipients: int = 0) -> None:
         self._max_size = max_message_size
+        # 0 disables the cap.
+        self._max_recipients = max_recipients
 
     # ------------------------------------------------------------------
     # Hooks
@@ -219,7 +221,16 @@ class RelayHandler:
         address: str,
         rcpt_options: list[str],
     ) -> str:
-        # Allow any recipient — Graph will enforce tenant-level rules.
+        # Cap the per-message recipient count as an anti-bombing backstop: one
+        # DATA cannot fan out to an unbounded list. Refuse with 452 (temporary)
+        # once the limit is reached so previously-accepted recipients still get
+        # delivered. 0 disables the cap.
+        if self._max_recipients and len(envelope.rcpt_tos) >= self._max_recipients:
+            return (
+                f"452 4.5.3 Too many recipients "
+                f"(max {self._max_recipients} per message)"
+            )
+        # Otherwise allow any recipient — Graph enforces tenant-level rules.
         envelope.rcpt_tos.append(address)
         envelope.rcpt_options.extend(rcpt_options)
         return "250 OK"

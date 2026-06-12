@@ -43,8 +43,11 @@ _log = logging.getLogger("ui")
 # -----------------------------------------------------------------------------
 # Rate limiter
 # -----------------------------------------------------------------------------
-# slowapi needs a callable that produces the key. We key on the remote
-# address as exposed by the X-Forwarded-For header (nginx sets it).
+# slowapi needs a callable that produces the key. get_remote_address returns
+# request.client.host, which uvicorn derives from X-Forwarded-For ONLY for the
+# trusted proxy (FORWARDED_ALLOW_IPS = the nginx static IP) after nginx has
+# overwritten the header with the real peer. A client therefore cannot forge
+# the key.
 limiter = Limiter(key_func=get_remote_address, default_limits=[])
 
 

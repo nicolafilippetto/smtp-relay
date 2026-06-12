@@ -16,6 +16,7 @@ import enum
 from typing import Optional
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Date,
     DateTime,
@@ -94,12 +95,18 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    # TOTP: secret is stored in cleartext (it is already a shared secret
-    # with the authenticator app; encrypting would not add value because
-    # we need plain access to validate on every login).
-    totp_secret: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # TOTP shared secret, Fernet-encrypted at rest and decrypted only at
+    # verification time. Stored as Text because a Fernet token is much longer
+    # than the raw base32 secret.
+    totp_secret: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     totp_enrolled_at: Mapped[Optional[_dt.datetime]] = mapped_column(
         DateTime, nullable=True
+    )
+    # Last consumed TOTP step (Unix time // 30). A submitted code whose step is
+    # <= this value is rejected, so each code is single-use within its validity
+    # window (anti-replay). NULL until the first successful TOTP verification.
+    totp_last_counter: Mapped[Optional[int]] = mapped_column(
+        BigInteger, nullable=True
     )
 
     # Force-rotate password on next login (used after ADMIN_RESET).
@@ -265,16 +272,18 @@ class Settings(Base):
         Boolean, nullable=False, default=False
     )
 
-    # Rate-limit (inbound DATA accepted per time window).
+    # Rate-limit (inbound DATA accepted per time window). On by default with a
+    # generous threshold: an anti-spam/anti-bombing backstop that does not
+    # throttle typical legacy batch senders. Tunable from the UI.
     rate_limit_enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
+        Boolean, nullable=False, default=True
     )
     # One of: "ip" | "username" | "both"
     rate_limit_scope: Mapped[str] = mapped_column(
         String(16), nullable=False, default="both"
     )
     rate_limit_threshold: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=10
+        Integer, nullable=False, default=60
     )
     rate_limit_window_sec: Mapped[int] = mapped_column(
         Integer, nullable=False, default=60

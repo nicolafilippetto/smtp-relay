@@ -246,8 +246,13 @@ async def _run() -> None:
     await _ensure_seed_rows()
 
     # Build and start the SMTP controller.
+    from common.constants import SMTP_MAX_RECIPIENTS_DEFAULT
+
     handler = RelayHandler(
-        max_message_size=int(os.environ.get("SMTP_MAX_MESSAGE_SIZE", "31457280"))
+        max_message_size=int(os.environ.get("SMTP_MAX_MESSAGE_SIZE", "31457280")),
+        max_recipients=int(
+            os.environ.get("SMTP_MAX_RECIPIENTS", str(SMTP_MAX_RECIPIENTS_DEFAULT))
+        ),
     )
     authenticator = RelayAuthenticator()
     controller_kwargs = build_controller_kwargs()

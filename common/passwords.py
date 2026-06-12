@@ -59,3 +59,13 @@ def verify_password(password: str, hashed: str) -> bool:
     except (ValueError, TypeError):
         # Malformed hash in DB; treat as failure rather than raising.
         return False
+
+
+# A valid bcrypt hash of a throwaway value, computed once at import with the
+# same cost factor as real hashes. Callers verify a submitted password against
+# this on the "account does not exist / disabled" path so that a missing user
+# and a wrong password cost the same wall-clock time. Without it, the short
+# circuit that skips bcrypt for unknown users leaks valid usernames through a
+# timing side channel (username enumeration). `verify_password` against this
+# hash always returns False but performs a full bcrypt comparison.
+DUMMY_PASSWORD_HASH: str = hash_password("timing-equalizer-not-a-real-password")
