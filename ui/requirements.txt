@@ -10,7 +10,7 @@ uvicorn[standard]==0.44.0
 
 # Pydantic 2 is required by FastAPI 0.136; pinned explicitly for clarity.
 pydantic==2.13.0
-pydantic-settings==2.14.0
+pydantic-settings==2.14.2
 
 # Form / multipart parsing for FastAPI (required for OAuth2PasswordRequestForm
 # and generic <form> POST handling).
