@@ -215,11 +215,13 @@ class QueueWorker:
         # 2. Try to send via Graph. Token acquisition errors + Graph
         # errors both surface as GraphError.
         graph_error: str | None = None
+        graph_exc: GraphError | None = None
         try:
             client = await self._graph_client()
             await asyncio.to_thread(client.send_mime, sender, raw)
         except GraphError as exc:
             graph_error = str(exc)
+            graph_exc = exc
         except Exception as exc:
             graph_error = f"Unexpected error: {exc!r}"
 
@@ -280,6 +282,7 @@ class QueueWorker:
                 return
 
             # Failure path.
+            transient = graph_exc is not None and graph_exc.transient
             row.last_error = graph_error[:4000]
             await audit_record(
                 session,
@@ -291,11 +294,16 @@ class QueueWorker:
                     "queue_id": row.id,
                     "sender": sender,
                     "attempts": attempts,
+                    "transient": transient,
                     "error": graph_error[:500],
                 },
             )
 
-            if attempts >= max_attempts:
+            # Permanent failures burn the retry budget and go DEAD once
+            # exhausted. Transient failures (throttling / 5xx / network)
+            # are retried indefinitely so a Microsoft 365 outage never
+            # silently drops mail.
+            if not transient and attempts >= max_attempts:
                 row.status = MailStatus.DEAD
                 row.next_attempt_at = None
                 _log.warning(
@@ -306,9 +314,17 @@ class QueueWorker:
                 )
                 return
 
-            # Schedule the next attempt.
-            step_idx = min(attempts - 1, len(QUEUE_BACKOFF_SECONDS) - 1)
-            delay = QUEUE_BACKOFF_SECONDS[step_idx]
+            # Schedule the next attempt. Honour a server-advised
+            # Retry-After on throttling; otherwise use the backoff step.
+            if (
+                transient
+                and graph_exc is not None
+                and graph_exc.retry_after is not None
+            ):
+                delay = max(graph_exc.retry_after, QUEUE_BACKOFF_SECONDS[0])
+            else:
+                step_idx = min(attempts - 1, len(QUEUE_BACKOFF_SECONDS) - 1)
+                delay = QUEUE_BACKOFF_SECONDS[step_idx]
             row.status = MailStatus.PENDING
             row.next_attempt_at = now + _dt.timedelta(seconds=delay)
 

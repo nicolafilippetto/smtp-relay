@@ -30,7 +30,48 @@ _log = logging.getLogger("relay.graph")
 
 
 class GraphError(RuntimeError):
-    """Raised for token or Graph API failures."""
+    """Raised for token or Graph API failures.
+
+    Attributes:
+        status_code: HTTP status from a Graph response, or None for
+            token-acquisition and transport-level errors.
+        retry_after: Server-advised delay in seconds parsed from the
+            ``Retry-After`` header, when present.
+        transient: True when the failure is worth retrying without
+            counting against the attempt budget (throttling, transient
+            server or network errors); False for permanent failures
+            (auth, permission, addressing) that will not succeed on
+            retry.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        retry_after: float | None = None,
+        transient: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.retry_after = retry_after
+        self.transient = transient
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    """Parse a ``Retry-After`` header (delta-seconds) into float seconds.
+
+    Microsoft Graph emits ``Retry-After`` as an integer number of
+    seconds on 429/503. The HTTP-date form is not used there and is
+    intentionally ignored (returns None).
+    """
+    if not value:
+        return None
+    try:
+        secs = float(value.strip())
+    except ValueError:
+        return None
+    return secs if secs >= 0 else None
 
 
 @dataclass(slots=True)
@@ -116,11 +157,16 @@ class GraphClient:
             with httpx.Client(timeout=GRAPH_HTTP_TIMEOUT_SECONDS) as client:
                 resp = client.post(url, headers=headers, content=encoded)
         except httpx.HTTPError as exc:
-            raise GraphError(f"HTTP error calling Graph: {exc}") from exc
+            # Transport-level failure (timeout, connection reset, DNS):
+            # transient by nature, worth retrying.
+            raise GraphError(
+                f"HTTP error calling Graph: {exc}", transient=True
+            ) from exc
 
         if resp.status_code == 202:
             return  # success, as documented for sendMail
 
+        status = resp.status_code
         # Surface the most useful part of the error to the caller.
         try:
             body = resp.json()
@@ -130,10 +176,18 @@ class GraphClient:
                 or resp.text
             )
         except ValueError:
-            detail = resp.text or f"HTTP {resp.status_code}"
+            detail = resp.text or f"HTTP {status}"
 
+        # 429 (throttling) and 5xx are transient; honour Retry-After when
+        # the server advises one. Everything else (401/403/404/550-style)
+        # is permanent and should burn a retry towards DEAD.
+        transient = status == 429 or 500 <= status < 600
+        retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
         raise GraphError(
-            f"Graph sendMail failed ({resp.status_code}): {detail}"
+            f"Graph sendMail failed ({status}): {detail}",
+            status_code=status,
+            retry_after=retry_after,
+            transient=transient,
         )
 
 
