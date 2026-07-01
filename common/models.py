@@ -69,6 +69,7 @@ class AuditEventType(str, enum.Enum):
     USER_UNBAN = "user_unban"
     QUEUE_RETRY = "queue_retry"
     ARCHIVE_DELETE = "archive_delete"
+    ARCHIVE_WRITE_FAIL = "archive_write_fail"
     ADMIN_RESET = "admin_reset"
 
 

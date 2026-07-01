@@ -244,7 +244,29 @@ class QueueWorker:
                     )
                     row.archive_path = str(path)
                 except Exception as exc:
-                    _log.warning("Archive write failed for id=%s: %s", row.id, exc)
+                    # The mail WAS delivered via Graph, so we must not
+                    # retry (that would double-send). But the local
+                    # archive/evidence copy is missing — surface it in
+                    # the audit trail instead of only a log line. A
+                    # dedicated event type keeps this out of the
+                    # send-failure alert path.
+                    _log.error(
+                        "Archive write failed for id=%s (mail was sent): %s",
+                        row.id,
+                        exc,
+                    )
+                    await audit_record(
+                        session,
+                        event_type=AuditEventType.ARCHIVE_WRITE_FAIL,
+                        outcome=AuditOutcome.FAILURE,
+                        source_ip=source_ip,
+                        username=source_username,
+                        details={
+                            "queue_id": row.id,
+                            "sender": sender,
+                            "error": str(exc)[:500],
+                        },
+                    )
 
                 row.status = MailStatus.SENT
                 row.last_error = None
