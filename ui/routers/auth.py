@@ -248,23 +248,7 @@ async def login_submit(
                 {"error": "Too many failed attempts. Try again later."},
                 status_code=429,
             )
-        if username and await is_banned(
-            s, kind=BanKind.UI, scope=BanScope.USERNAME, value=username
-        ):
-            await audit_record(
-                s,
-                event_type=AuditEventType.LOGIN_FAIL,
-                outcome=AuditOutcome.FAILURE,
-                source_ip=ip,
-                username=username,
-                details={"blocked": "ban", "scope": "username"},
-            )
-            return render(
-                request,
-                "login.html",
-                {"error": "Too many failed attempts. Try again later."},
-                status_code=429,
-            )
+        # No username-scoped ban check: see the failure path below.
 
         user = await s.scalar(select(User).where(User.username == username))
         if user is not None and user.is_active:
@@ -276,8 +260,12 @@ async def login_submit(
             ok = False
 
         if not ok:
+            # UI login bans are IP-scoped only. A username-scoped ban would
+            # let an attacker from any IP lock out a known account (e.g.
+            # "admin") just by submitting wrong passwords -- a trivial DoS on
+            # an internet-facing panel. Per-IP throttling plus mandatory TOTP
+            # already stop password guessing.
             banned_ip = False
-            banned_user = False
             if ip:
                 banned_ip = await record_failure(
                     s,
@@ -288,28 +276,15 @@ async def login_submit(
                     threshold=settings.ui_login_ban_threshold,
                     duration_min=settings.ui_login_ban_duration_min,
                 )
-            if username:
-                banned_user = await record_failure(
-                    s,
-                    kind=BanKind.UI,
-                    scope=BanScope.USERNAME,
-                    value=username,
-                    source_ip=ip,
-                    threshold=settings.ui_login_ban_threshold,
-                    duration_min=settings.ui_login_ban_duration_min,
-                )
             await audit_record(
                 s,
                 event_type=AuditEventType.LOGIN_FAIL,
                 outcome=AuditOutcome.FAILURE,
                 source_ip=ip,
                 username=username,
-                details={
-                    "banned_ip": banned_ip,
-                    "banned_user": banned_user,
-                },
+                details={"banned_ip": banned_ip},
             )
-            if banned_ip or banned_user:
+            if banned_ip:
                 await audit_record(
                     s,
                     event_type=AuditEventType.USER_BAN,
