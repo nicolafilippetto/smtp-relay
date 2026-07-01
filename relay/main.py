@@ -35,7 +35,7 @@ from common.models import (
     Settings,
 )
 
-from .queue_manager import QueueWorker, prune_sent
+from .queue_manager import QueueWorker, prune_sent, recover_orphaned_sending
 from .smtp_handler import (
     CaseInsensitiveAuthSMTP,
     RelayAuthenticator,
@@ -244,6 +244,10 @@ async def _run() -> None:
 
     await _wait_for_schema()
     await _ensure_seed_rows()
+
+    # Recover any messages left in SENDING by a previous ungraceful stop
+    # before the worker starts leasing PENDING rows.
+    await recover_orphaned_sending()
 
     # Build and start the SMTP controller.
     from common.constants import SMTP_MAX_RECIPIENTS_DEFAULT
