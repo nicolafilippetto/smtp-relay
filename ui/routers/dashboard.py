@@ -11,7 +11,9 @@ Aggregates:
 
 from __future__ import annotations
 
+import asyncio
 import datetime as _dt
+import time as _time
 from dataclasses import dataclass
 
 from fastapi import APIRouter, Depends, Request
@@ -87,6 +89,34 @@ def _classify_heartbeat(hb: RelayHeartbeat | None, now: _dt.datetime) -> RelaySt
     )
 
 
+# Archive disk usage is derived from a full recursive scan of the archive
+# tree, which grows unbounded over time. Running it inline on the event
+# loop blocked every other request (including the liveness probe) while it
+# ran, and a slow-enough scan tripped the reverse-proxy read timeout. We
+# push it into a worker thread and cache the result for a minute — the
+# dashboard is a status view, so a slightly stale byte count is fine.
+_DISK_CACHE_TTL_S = 60.0
+_disk_cache: tuple[float, tuple[int, int, float]] | None = None
+
+
+async def _archive_disk_stats() -> tuple[int, int, float]:
+    """Return ``(disk_bytes, disk_total, disk_pct)``, cached and off-loop."""
+    global _disk_cache
+    now = _time.monotonic()
+    if _disk_cache is not None and now < _disk_cache[0]:
+        return _disk_cache[1]
+
+    def _compute() -> tuple[int, int, float]:
+        disk_bytes = archive.archive_disk_usage_bytes()
+        disk_total = _volume_total_bytes(str(archive.archive_root()))
+        disk_pct = (disk_bytes / disk_total * 100) if disk_total else 0.0
+        return disk_bytes, disk_total, disk_pct
+
+    stats = await asyncio.to_thread(_compute)
+    _disk_cache = (now + _DISK_CACHE_TTL_S, stats)
+    return stats
+
+
 async def _stats_for_window(session, since: _dt.datetime) -> dict[str, int]:
     """Return counts grouped by status for rows received after `since`."""
     stmt = (
@@ -150,10 +180,9 @@ async def dashboard(
     relay = _classify_heartbeat(hb, now)
 
     # Archive disk usage (bytes); we emit an alert over 80% of the
-    # filesystem size of /data.
-    disk_bytes = archive.archive_disk_usage_bytes()
-    disk_total = _volume_total_bytes(str(archive.archive_root()))
-    disk_pct = (disk_bytes / disk_total * 100) if disk_total else 0.0
+    # filesystem size of /data. Computed off the event loop and cached —
+    # see _archive_disk_stats.
+    disk_bytes, disk_total, disk_pct = await _archive_disk_stats()
 
     token_warn = _token_warning(tenant, now)
 
