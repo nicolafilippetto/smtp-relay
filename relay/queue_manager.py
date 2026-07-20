@@ -92,6 +92,36 @@ def _extract_subject(raw_mime: bytes) -> str | None:
 
 
 # -----------------------------------------------------------------------------
+# Startup recovery
+# -----------------------------------------------------------------------------
+
+async def recover_orphaned_sending() -> int:
+    """Return rows stuck in SENDING back to PENDING. Returns the count.
+
+    A row is left in SENDING only when the worker was interrupted
+    mid-send: an ungraceful stop, a crash, or the shutdown cancel in
+    ``QueueWorker.stop()``. Because ``_lease_one()`` only ever leases
+    PENDING rows, such a row would otherwise never be retried and the
+    mail would sit stranded forever. Run this once at startup, before
+    the worker starts, so at-least-once delivery survives a restart.
+    """
+    now = _utcnow()
+    async with session_scope() as session:
+        res = await session.execute(
+            update(MailQueue)
+            .where(MailQueue.status == MailStatus.SENDING)
+            .values(status=MailStatus.PENDING, next_attempt_at=now)
+            .execution_options(synchronize_session=False)
+        )
+    count = res.rowcount or 0
+    if count:
+        _log.warning(
+            "Recovered %d message(s) stranded in SENDING -> PENDING.", count
+        )
+    return count
+
+
+# -----------------------------------------------------------------------------
 # Background worker
 # -----------------------------------------------------------------------------
 
