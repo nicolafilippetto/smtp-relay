@@ -11,16 +11,41 @@ import os
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import NullPool
 
 
 _engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
+
+
+def _apply_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
+    """Apply per-connection PRAGMAs to every new SQLite connection.
+
+    ``journal_mode=WAL`` is a persistent, DB-level property, but
+    ``synchronous`` and ``foreign_keys`` are per-connection and reset to
+    the SQLite defaults on every new one. Since NullPool opens a fresh
+    connection per session, applying them once at startup is not enough:
+    ``synchronous`` would silently fall back to FULL, quietly undoing the
+    WAL/NORMAL trade-off this engine is configured for.
+
+    ``foreign_keys=ON`` has no effect on the current schema, which
+    declares no foreign keys — it is set so enforcement is correct by
+    construction if any are ever added.
+    """
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA foreign_keys=ON")
+    finally:
+        cursor.close()
 
 
 def get_engine() -> AsyncEngine:
@@ -31,12 +56,19 @@ def get_engine() -> AsyncEngine:
             raise RuntimeError("DATABASE_URL is not set.")
         _engine = create_async_engine(
             url,
-            # SQLite behaves much better under concurrent readers when WAL
-            # is enabled. The PRAGMA is applied on the first connection.
+            # NullPool: every session gets a fresh aiosqlite connection that
+            # is fully closed on release. A connection left in a wedged state
+            # by a cancelled request (client/proxy disconnect mid-query) can
+            # therefore NOT poison later requests — that was the failure mode
+            # that made the panel hang after hours of uptime until a container
+            # restart. SQLite connections are cheap to open, so for this
+            # low-concurrency workload a persistent pool bought nothing but
+            # that risk.
+            poolclass=NullPool,
             connect_args={"timeout": 30},
-            pool_pre_ping=True,
             future=True,
         )
+        event.listen(_engine.sync_engine, "connect", _apply_sqlite_pragmas)
         _sessionmaker = async_sessionmaker(
             _engine, expire_on_commit=False, autoflush=False
         )
