@@ -193,6 +193,15 @@ class RelayHandler:
         ip = _peer_ip(session)
         username = getattr(session, "auth_data", None)
 
+        # Enforce bans on the message path. handle_EHLO only gates the
+        # greeting (a client sending HELO skips it entirely), and a
+        # whitelisted IP is otherwise never re-checked after the
+        # greeting — so a banned-but-whitelisted or HELO-only client
+        # could still relay. MAIL FROM is the choke point every message
+        # passes through.
+        if await ip_or_user_banned(ip, username):
+            return "550 5.7.1 Access denied"
+
         # Require auth OR a whitelist match.
         if not username and not await is_ip_whitelisted(ip or ""):
             return "530 5.7.0 Authentication required"
