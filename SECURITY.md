@@ -30,9 +30,15 @@ rebuilds.
 | CVE-2025-7458 | libsqlite3 | CRITICAL | No fix available |
 | CVE-2026-29111 | systemd | HIGH | No fix available |
 | CVE-2023-45853 | zlib | CRITICAL | `will_not_fix` — not exploitable in this context |
+| CVE-2026-8376 | perl-base | CRITICAL | `affected` — 32-bit builds only; images are 64-bit |
+| CVE-2026-42496 | perl-base | CRITICAL | `fix_deferred` — Archive::Tar path traversal, module not used |
 
 All Python dependency CVEs have been resolved. The image is rebuilt periodically
 to pick up OS-level patches as they are released by Debian.
+
+These accepted CVEs are also listed in [`.trivyignore`](.trivyignore) so that a
+Trivy scan configured to fail on CRITICAL findings passes with the risk
+acceptance recorded in version control. Keep the two lists in sync.
 
 ---
 

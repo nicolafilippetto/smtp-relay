@@ -1,0 +1,32 @@
+# =============================================================================
+# Trivy ignore list — accepted base-image vulnerabilities
+# =============================================================================
+# The relay and ui images share the python:3.12-slim-bookworm (Debian 12) base.
+# The CRITICAL CVEs below have NO fixed Debian version available, so they cannot
+# be resolved by patching, `apt-get upgrade`, or rebasing onto a newer base-image
+# digest. They are accepted as documented risk — see the "Known Accepted Risks"
+# section in SECURITY.md for the full rationale.
+#
+# This file is auto-loaded by Trivy from the repository root, so a scan
+# configured to fail on CRITICAL findings passes with the acceptance recorded
+# in version control. Re-review when Debian ships fixes and drop resolved entries.
+#
+# Last reviewed: 2026-07-02
+# -----------------------------------------------------------------------------
+
+# zlib1g — integer overflow in minizip's zipOpenNewFileInZip4_6.
+# Debian: will_not_fix. The vulnerable minizip code is not compiled into Debian's
+# zlib1g, so the library as shipped is not affected. Never fixed upstream.
+CVE-2023-45853
+
+# perl-base — heap buffer overflow compiling regexes on 32-bit builds only.
+# Not applicable: images are built for 64-bit platforms. No fix available.
+CVE-2026-8376
+
+# perl-base — path traversal in Archive::Tar via crafted symlinks.
+# Debian: fix_deferred (no fix yet). Archive::Tar is not used at runtime.
+CVE-2026-42496
+
+# libsqlite3-0 — SQLite integer overflow. Status: affected, no fixed Debian
+# version available. Re-evaluate once Debian ships a patch.
+CVE-2025-7458
