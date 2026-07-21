@@ -82,49 +82,66 @@ def _today_utc() -> _dt.date:
     return _utcnow().date()
 
 
+def _rotation_hint(uses_certificate: bool) -> str:
+    """How the operator remediates an expiring credential, per method."""
+    if uses_certificate:
+        return (
+            "Generate a new certificate on the Tenant page, upload its public "
+            ".cer to the Entra app registration, then activate it."
+        )
+    return (
+        "Rotate the secret in the Azure portal and update the expiry date on "
+        "the Tenant page."
+    )
+
+
 def secret_expiry_section(
     tenant: TenantConfig | None,
     today: _dt.date,
     threshold_days: int,
 ) -> DigestSection | None:
-    """Return a section if the secret is within the warning window or past due."""
-    if tenant is None or tenant.secret_expires_at is None:
+    """Return a section if the active credential is expiring or past due.
+
+    Handles both authentication methods: for a client secret the expiry is
+    the operator-supplied date; for a certificate it is the notAfter the app
+    recorded at generation time. Named `secret_expiry_section` for backwards
+    compatibility with existing callers.
+    """
+    if tenant is None:
         return None
-    days = (tenant.secret_expires_at - today).days
+    expiry = tenant.credential_expires_at
+    if expiry is None:
+        return None
+    label = tenant.credential_label  # "client secret" | "certificate"
+    hint = _rotation_hint(tenant.uses_certificate)
+    days = (expiry - today).days
     if days > threshold_days:
         return None
     if days < 0:
         return DigestSection(
-            title="Azure AD client secret EXPIRED",
+            title=f"Azure AD {label} EXPIRED",
             body=(
-                f"The configured expiry date for the Azure AD client secret "
-                f"({tenant.secret_expires_at.isoformat()}) is in the past "
-                f"({-days} day(s) ago).\n\n"
-                f"Either the secret has actually expired and outbound mail is "
-                f"failing, or you rotated the secret without updating the date "
-                f"on the Tenant page. Verify and either update the date or "
-                f"rotate the secret in the Azure portal.\n"
+                f"The expiry date for the Azure AD {label} "
+                f"({expiry.isoformat()}) is in the past ({-days} day(s) ago). "
+                f"Outbound mail is likely failing.\n\n"
+                f"{hint}\n"
             ),
             severity="err",
         )
     if days == 0:
         return DigestSection(
-            title="Azure AD client secret expires TODAY",
+            title=f"Azure AD {label} expires TODAY",
             body=(
-                f"The configured expiry date for the Azure AD client secret "
-                f"is today ({tenant.secret_expires_at.isoformat()}). Rotate "
-                f"the secret in the Azure portal and update the date on the "
-                f"Tenant page.\n"
+                f"The Azure AD {label} expires today ({expiry.isoformat()}). "
+                f"{hint}\n"
             ),
             severity="err",
         )
     return DigestSection(
-        title=f"Azure AD client secret expires in {days} day(s)",
+        title=f"Azure AD {label} expires in {days} day(s)",
         body=(
-            f"The configured expiry date for the Azure AD client secret is "
-            f"{tenant.secret_expires_at.isoformat()} ({days} day(s) from "
-            f"today). Plan the rotation; once rotated, update the expiry "
-            f"date on the Tenant page.\n"
+            f"The Azure AD {label} expires on {expiry.isoformat()} "
+            f"({days} day(s) from today). Plan the rotation. {hint}\n"
         ),
         severity="warn",
     )

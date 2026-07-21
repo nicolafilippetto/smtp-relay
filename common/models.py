@@ -188,8 +188,51 @@ class TenantConfig(Base):
 
     tenant_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     client_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+    # Which credential the relay authenticates with: "secret" or
+    # "certificate". Exactly one is live at a time; the other's material may
+    # remain stored (unused) so the operator can switch back without re-entry.
+    auth_method: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="secret", server_default="secret"
+    )
+
     # Fernet-encrypted value; never logged, never returned by the API.
     client_secret_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # ---- Certificate credential (active) -------------------------------
+    # Fernet-encrypted PKCS#8 private key. Never logged, never downloadable.
+    cert_private_key_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # PEM public certificate — the part the operator uploads to Entra. Safe
+    # to expose; offered as a `.cer` download in the UI.
+    cert_public_pem: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Uppercase, colon-free hex SHA-1 fingerprint (matches Entra + MSAL).
+    cert_thumbprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # notAfter of the active certificate. Known at generation time, so it
+    # drives the expiry alert without operator transcription.
+    cert_not_after: Mapped[Optional[_dt.date]] = mapped_column(Date, nullable=True)
+    cert_created_at: Mapped[Optional[_dt.datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+    cert_subject: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    # ---- Certificate credential (pending / staged) ---------------------
+    # A newly generated certificate that is NOT yet used for signing. It is
+    # promoted to the active slot only when the operator activates it — after
+    # uploading its public `.cer` to Entra — so rotation never breaks live
+    # sends (the active private key keeps signing until the swap).
+    cert_pending_private_key_enc: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True
+    )
+    cert_pending_public_pem: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cert_pending_thumbprint: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True
+    )
+    cert_pending_not_after: Mapped[Optional[_dt.date]] = mapped_column(
+        Date, nullable=True
+    )
+    cert_pending_created_at: Mapped[Optional[_dt.datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
 
     # Timestamps from the last test-connection attempt.
     last_test_at: Mapped[Optional[_dt.datetime]] = mapped_column(
@@ -215,6 +258,30 @@ class TenantConfig(Base):
     updated_at: Mapped[_dt.datetime] = mapped_column(
         DateTime, nullable=False, default=_utcnow, onupdate=_utcnow
     )
+
+    # ---- Convenience accessors for the *active* credential -------------
+    # Both the UI (dashboard/config indicators) and the alert digest read
+    # these so the expiry logic lives in one place regardless of method.
+
+    @property
+    def uses_certificate(self) -> bool:
+        return (self.auth_method or "secret") == "certificate"
+
+    @property
+    def has_active_credential(self) -> bool:
+        """True when the *selected* method has usable material stored."""
+        if self.uses_certificate:
+            return bool(self.cert_private_key_enc and self.cert_thumbprint)
+        return bool(self.client_secret_enc)
+
+    @property
+    def credential_label(self) -> str:
+        return "certificate" if self.uses_certificate else "client secret"
+
+    @property
+    def credential_expires_at(self) -> Optional[_dt.date]:
+        """Expiry date of whichever credential is currently active."""
+        return self.cert_not_after if self.uses_certificate else self.secret_expires_at
 
 
 # =============================================================================

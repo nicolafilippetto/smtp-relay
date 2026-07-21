@@ -28,9 +28,8 @@ from sqlalchemy import select, update
 from common import archive
 from common.audit import record as audit_record
 from common.constants import QUEUE_BACKOFF_SECONDS, QUEUE_MAX_ATTEMPTS_DEFAULT
-from common.crypto import decrypt_str
 from common.db import session_scope
-from common.graph_client import GraphClient, GraphError
+from common.graph_client import GraphClient, GraphError, credential_fingerprint
 from common.models import (
     AuditEventType,
     AuditOutcome,
@@ -198,29 +197,30 @@ class QueueWorker:
     # Per-message processing -------------------------------------------
 
     async def _graph_client(self) -> GraphClient:
-        """Return a cached GraphClient for the currently-configured tenant."""
+        """Return a cached GraphClient for the currently-configured tenant.
+
+        The client is rebuilt whenever the active credential changes — a
+        secret rotation, a certificate activation, or a different tenant/
+        client id — detected via `credential_fingerprint` without decrypting
+        anything. Building happens inside the session so the row's encrypted
+        material is still loaded.
+        """
         async with session_scope() as session:
             cfg = await session.scalar(
                 select(TenantConfig).where(TenantConfig.id == 1)
             )
-            if (
-                cfg is None
-                or not cfg.tenant_id
-                or not cfg.client_id
-                or not cfg.client_secret_enc
-            ):
+            if cfg is None or not cfg.tenant_id or not cfg.client_id:
                 raise GraphError(
                     "Entra tenant configuration is missing. Configure it "
                     "in the UI before enabling the relay."
                 )
-            secret = decrypt_str(cfg.client_secret_enc)
-
-        if self._graph is not None and self._graph.is_for(
-            cfg.tenant_id, cfg.client_id
-        ):
-            return self._graph
-
-        self._graph = GraphClient(cfg.tenant_id, cfg.client_id, secret)
+            if (
+                self._graph is not None
+                and self._graph.fingerprint == credential_fingerprint(cfg)
+            ):
+                return self._graph
+            # Raises GraphError if the selected credential has no material.
+            self._graph = GraphClient.from_tenant_config(cfg)
         return self._graph
 
     async def _process(self, row_id: int) -> None:

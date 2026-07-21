@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import base64
 import datetime as _dt
+import hashlib
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import msal
@@ -25,8 +26,30 @@ from .constants import (
     GRAPH_SCOPE,
     GRAPH_SEND_MAIL_URL,
 )
+from .crypto import decrypt_str
+
+if TYPE_CHECKING:  # avoid an import cycle at runtime (models imports nothing here)
+    from .models import TenantConfig
 
 _log = logging.getLogger("relay.graph")
+
+
+def credential_fingerprint(cfg: "TenantConfig") -> str:
+    """A cheap change-detector for the tenant's *active* credential.
+
+    Used to decide whether a cached GraphClient is still valid. It never
+    decrypts anything: for the secret path it hashes the ciphertext, which
+    changes precisely when the secret is re-encrypted (i.e. rotated); for
+    the certificate path it uses the thumbprint. Including tenant/client/
+    method means any of those changing also invalidates the cache.
+    """
+    method = cfg.auth_method or "secret"
+    parts = [method, cfg.tenant_id or "", cfg.client_id or ""]
+    if method == "certificate":
+        parts.append(cfg.cert_thumbprint or "")
+    else:
+        parts.append(cfg.client_secret_enc or "")
+    return hashlib.sha256("\x00".join(parts).encode("utf-8")).hexdigest()
 
 
 class GraphError(RuntimeError):
@@ -42,29 +65,91 @@ class TokenInfo:
 class GraphClient:
     """Thin, cacheable Graph client for a single tenant configuration.
 
-    A new instance should be built whenever the tenant config changes.
-    The relay rebuilds on every queue processing loop when it detects
-    a config update; callers can cheaply check `.is_for(tenant_id,
-    client_id)` before reusing an existing client.
+    Authenticates with either a client secret or a certificate, depending
+    on how it is constructed (see `from_tenant_config`). A new instance
+    should be built whenever the active credential changes; callers can
+    compare `.fingerprint` against `credential_fingerprint(cfg)` to decide
+    whether a cached client is still valid before reusing it.
     """
 
-    def __init__(self, tenant_id: str, client_id: str, client_secret: str) -> None:
-        if not tenant_id or not client_id or not client_secret:
+    def __init__(
+        self,
+        tenant_id: str,
+        client_id: str,
+        *,
+        client_secret: str | None = None,
+        certificate: dict[str, Any] | None = None,
+        fingerprint: str = "",
+    ) -> None:
+        if not tenant_id or not client_id:
             raise GraphError(
                 "Tenant configuration is incomplete. Configure Entra ID "
                 "settings in the UI before sending mail."
             )
+        if not client_secret and not certificate:
+            raise GraphError(
+                "No credential provided. Configure a client secret or a "
+                "certificate in the UI before sending mail."
+            )
         self._tenant_id = tenant_id
         self._client_id = client_id
+        # `fingerprint` lets a caller cheaply check whether a cached client
+        # still matches the current tenant config (see credential_fingerprint).
+        self.fingerprint = fingerprint
         authority = GRAPH_AUTHORITY_TEMPLATE.format(tenant_id=tenant_id)
+        # MSAL accepts either a plain string (secret) or a dict with
+        # {"private_key", "thumbprint", "public_certificate"} for a cert.
+        credential: str | dict[str, Any] = (
+            certificate if certificate is not None else client_secret  # type: ignore[assignment]
+        )
         self._app = msal.ConfidentialClientApplication(
             client_id=client_id,
-            client_credential=client_secret,
+            client_credential=credential,
             authority=authority,
         )
 
-    def is_for(self, tenant_id: str, client_id: str) -> bool:
-        return tenant_id == self._tenant_id and client_id == self._client_id
+    @classmethod
+    def from_tenant_config(cls, cfg: "TenantConfig") -> "GraphClient":
+        """Build a client for whichever credential the tenant row selects.
+
+        Must be called while `cfg`'s attributes are still loaded (i.e. inside
+        the DB session that fetched it), because it reads the encrypted
+        credential material off the row.
+        """
+        method = cfg.auth_method or "secret"
+        if not cfg.tenant_id or not cfg.client_id:
+            raise GraphError(
+                "Tenant configuration is incomplete. Configure Entra ID "
+                "settings in the UI before sending mail."
+            )
+        fp = credential_fingerprint(cfg)
+        if method == "certificate":
+            if not cfg.cert_private_key_enc or not cfg.cert_thumbprint:
+                raise GraphError(
+                    "Certificate authentication is selected but no active "
+                    "certificate is present. Generate one and activate it on "
+                    "the Tenant page."
+                )
+            certificate = {
+                "private_key": decrypt_str(cfg.cert_private_key_enc),
+                "thumbprint": cfg.cert_thumbprint,
+            }
+            if cfg.cert_public_pem:
+                certificate["public_certificate"] = cfg.cert_public_pem
+            return cls(
+                cfg.tenant_id, cfg.client_id, certificate=certificate, fingerprint=fp
+            )
+        if not cfg.client_secret_enc:
+            raise GraphError(
+                "Client-secret authentication is selected but no secret is "
+                "stored. Enter one on the Tenant page."
+            )
+        return cls(
+            cfg.tenant_id,
+            cfg.client_id,
+            client_secret=decrypt_str(cfg.client_secret_enc),
+            fingerprint=fp,
+        )
 
     # ------------------------------------------------------------------
     # Token acquisition
