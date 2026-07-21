@@ -30,6 +30,8 @@ class TenantConfigIn(BaseModel):
 
     tenant_id: Annotated[str, Field(min_length=1, max_length=64)]
     client_id: Annotated[str, Field(min_length=1, max_length=64)]
+    # Which credential is live: "secret" or "certificate".
+    auth_method: str = "secret"
     # Empty string means "leave existing secret untouched".
     client_secret: str = ""
     # Optional secret expiry date; pair with `clear_secret_expires_at`
@@ -40,6 +42,14 @@ class TenantConfigIn(BaseModel):
     # the new secret. Required only when a new client_secret is being
     # submitted (enforced in the router, not here).
     expiry_verified: bool = False
+
+    @field_validator("auth_method")
+    @classmethod
+    def _validate_auth_method(cls, v: str) -> str:
+        v = (v or "secret").strip().lower()
+        if v not in ("secret", "certificate"):
+            raise ValueError("auth_method must be 'secret' or 'certificate'")
+        return v
 
 
 class AdminNotificationsIn(BaseModel):
@@ -208,6 +218,7 @@ class SmtpAccountIn(BaseModel):
 def tenant_form(
     tenant_id: str = Form(""),
     client_id: str = Form(""),
+    auth_method: str = Form("secret"),
     client_secret: str = Form(""),
     secret_expires_at: str = Form(""),
     clear_secret_expires_at: bool = Form(False),
@@ -225,6 +236,7 @@ def tenant_form(
     return TenantConfigIn(
         tenant_id=_clean(tenant_id),
         client_id=_clean(client_id),
+        auth_method=auth_method,
         client_secret=client_secret,  # secret is not stripped: preserve leading/trailing chars
         secret_expires_at=parsed_date,
         clear_secret_expires_at=clear_secret_expires_at,

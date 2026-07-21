@@ -256,7 +256,7 @@ async def dashboard(
 def _token_warning(tenant: TenantConfig | None, now: _dt.datetime) -> str | None:
     if tenant is None:
         return "Entra tenant is not configured yet."
-    if not tenant.tenant_id or not tenant.client_id or not tenant.client_secret_enc:
+    if not tenant.tenant_id or not tenant.client_id or not tenant.has_active_credential:
         return "Entra tenant configuration is incomplete."
     if tenant.last_test_ok is False:
         return "Last Graph connection test failed — check the Config page."
@@ -276,34 +276,31 @@ def _secret_expiry_alert(
     today: _dt.date,
 ) -> dict[str, str] | None:
     """Mirror the digest-section logic so the dashboard shows the same state."""
-    if tenant is None or tenant.secret_expires_at is None:
+    if tenant is None or tenant.credential_expires_at is None:
         return None
+    expiry = tenant.credential_expires_at
+    label = tenant.credential_label  # "client secret" | "certificate"
     threshold = settings.alert_secret_expiry_days if settings else 30
-    days = (tenant.secret_expires_at - today).days
+    days = (expiry - today).days
     if days > threshold:
         return None
     if days < 0:
         return {
             "level": "err",
             "message": (
-                f"Azure AD client secret expiry date passed {-days} day(s) ago "
-                f"({tenant.secret_expires_at.isoformat()}). "
-                f"Verify the date or rotate the secret."
+                f"Azure AD {label} expiry date passed {-days} day(s) ago "
+                f"({expiry.isoformat()})."
             ),
         }
     if days == 0:
         return {
             "level": "err",
-            "message": (
-                f"Azure AD client secret expires TODAY "
-                f"({tenant.secret_expires_at.isoformat()})."
-            ),
+            "message": f"Azure AD {label} expires TODAY ({expiry.isoformat()}).",
         }
     return {
         "level": "warn",
         "message": (
-            f"Azure AD client secret expires in {days} day(s) "
-            f"({tenant.secret_expires_at.isoformat()})."
+            f"Azure AD {label} expires in {days} day(s) ({expiry.isoformat()})."
         ),
     }
 

@@ -31,6 +31,7 @@ _SENSITIVE_KEY_PARTS = (
     "authorization",
     "auth",
     "totp",
+    "private_key",
 )
 
 

@@ -286,10 +286,27 @@ Everything happens in the Entra admin center. No Exchange Online configuration n
    - *Directory (tenant) ID*
    - *Application (client) ID*
 
-3. **Create a client secret.**
+3. **Add a credential — choose one:** a client secret *or* a certificate.
+   On the relay's *Config → Tenant* page, pick the matching **Authentication
+   method**.
+
+   **Option A — Client secret** (simplest)
    *Certificates & secrets* → *Client secrets* → *New client secret*.
    - Set an expiry matching your rotation policy (e.g. 1 year).
-   - **Copy the Value immediately** — it is only shown once.
+   - **Copy the Value immediately** — it is only shown once. Paste it on the
+     Tenant page and record its expiry date.
+
+   **Option B — Certificate** (more secure, recommended)
+   The relay generates the key pair for you, so the private key never leaves
+   the deployment and its expiry is tracked automatically.
+   1. On *Config → Tenant*, under **Certificate credential**, click
+      **Generate certificate** (validity 1/2/3/5 years, default 5).
+   2. **Download the `.cer`** and upload it in Entra:
+      *Certificates & secrets* → *Certificates* → *Upload certificate*.
+   3. Back on the Tenant page, click **Activate** — this promotes the staged
+      certificate to the live credential. Generating never disrupts an
+      in-use certificate, so rotation is zero-downtime: generate → upload →
+      activate.
 
 4. **Grant the `Mail.Send` application permission.**
    *API permissions* → *Add a permission* → *Microsoft Graph* → *Application permissions* → expand *Mail* → check `Mail.Send` → *Add permissions*.
@@ -406,7 +423,7 @@ docker run --rm \
 docker compose up -d
 ```
 
-Back up `.env` too — without `ENCRYPTION_KEY` the saved client secret is unrecoverable.
+Back up `.env` too — without `ENCRYPTION_KEY` the saved client secret and certificate private key are unrecoverable.
 
 ---
 
@@ -420,6 +437,8 @@ docker compose run --rm ui alembic -c ui/alembic.ini upgrade head
 ```
 
 **`AADSTS7000215: Invalid client secret`** — secret is wrong or expired; generate a new one in Entra ID.
+
+**`AADSTS700027: Client assertion contains an invalid signature` / certificate errors** — when using certificate auth, the public `.cer` was not uploaded to the app registration (or you activated a new certificate without uploading it first). Upload the certificate under *Certificates & secrets → Certificates*, then re-test on *Config → Tenant*.
 
 **`AADSTS700016: Application was not found`** — wrong client ID or tenant ID.
 

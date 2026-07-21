@@ -21,22 +21,36 @@
     <p class="flash flash-{{ 'info' if cfg and cfg.last_test_ok else 'warn' }}">
       Test completed. See status below.
     </p>
+  {% elif request.query_params.get('cert_generated') %}
+    <p class="flash flash-info">
+      Certificate generated. Download the <strong>.cer</strong> below, upload it
+      to the Entra app registration (Certificates &amp; secrets → Certificates),
+      then <strong>Activate</strong> it.
+    </p>
+  {% elif request.query_params.get('cert_activated') %}
+    <p class="flash flash-info">
+      Certificate activated — it is now the live credential. Run
+      “Test connection” to verify.
+    </p>
+  {% elif request.query_params.get('cert_discarded') %}
+    <p class="flash flash-info">Pending certificate discarded.</p>
   {% endif %}
 
-  {# Secret-expiry indicator (same style as dashboard alerts) #}
-  {% if cfg and cfg.secret_expires_at %}
-    {% set days = (cfg.secret_expires_at - today).days %}
+  {# Credential-expiry indicator — reflects whichever method is active. #}
+  {% if cfg and cfg.credential_expires_at %}
+    {% set days = (cfg.credential_expires_at - today).days %}
+    {% set label = cfg.credential_label %}
     {% if days < 0 %}
       <p class="alert alert-err">
-        ❌ Secret expiry date passed {{ -days }} day(s) ago
-        ({{ cfg.secret_expires_at }}). Verify the date or rotate the secret.
+        ❌ {{ label|capitalize }} expiry date passed {{ -days }} day(s) ago
+        ({{ cfg.credential_expires_at }}).
       </p>
     {% elif days == 0 %}
-      <p class="alert alert-err">⚠ Secret expires today ({{ cfg.secret_expires_at }}).</p>
+      <p class="alert alert-err">⚠ {{ label|capitalize }} expires today ({{ cfg.credential_expires_at }}).</p>
     {% elif days <= 14 %}
-      <p class="alert alert-warn">⚠ Secret expires in {{ days }} day(s) ({{ cfg.secret_expires_at }}).</p>
+      <p class="alert alert-warn">⚠ {{ label|capitalize }} expires in {{ days }} day(s) ({{ cfg.credential_expires_at }}).</p>
     {% else %}
-      <p class="alert alert-info">Secret expires in {{ days }} day(s) ({{ cfg.secret_expires_at }}).</p>
+      <p class="alert alert-info">{{ label|capitalize }} expires in {{ days }} day(s) ({{ cfg.credential_expires_at }}).</p>
     {% endif %}
   {% endif %}
 
@@ -55,15 +69,38 @@
              value="{{ cfg.client_id if cfg and cfg.client_id else '' }}">
     </label>
 
-    <label>
-      Client secret
-      <input type="password" name="client_secret"
-             placeholder="{% if has_secret %}•••••• (leave empty to keep the existing secret){% else %}Enter a new client secret{% endif %}"
-             autocomplete="new-password">
-    </label>
+    <fieldset>
+      <legend>Authentication method</legend>
+      <label class="check">
+        <input type="radio" name="auth_method" value="secret"
+               {{ 'checked' if not (cfg and cfg.uses_certificate) else '' }}>
+        Client secret
+      </label>
+      <label class="check">
+        <input type="radio" name="auth_method" value="certificate"
+               {{ 'checked' if cfg and cfg.uses_certificate else '' }}
+               {{ '' if has_active_cert else 'disabled' }}>
+        Certificate
+        {% if not has_active_cert %}
+          <span class="small muted">(generate &amp; activate one below first)</span>
+        {% endif %}
+      </label>
+      <p class="small muted">
+        A certificate is more secure than a shared secret: only its public
+        part is uploaded to Entra, while the private key stays encrypted here
+        and never leaves the relay.
+      </p>
+    </fieldset>
 
     <fieldset>
-      <legend>Client secret expiry</legend>
+      <legend>Client secret</legend>
+      <label>
+        Secret value
+        <input type="password" name="client_secret"
+               placeholder="{% if has_secret %}•••••• (leave empty to keep the existing secret){% else %}Enter a new client secret{% endif %}"
+               autocomplete="new-password">
+      </label>
+
       <div class="grid grid-2">
         <label>
           Expiry date (optional)
@@ -82,7 +119,7 @@
       </p>
       <p class="small muted">
         → <a href="/config/notifications">Go to Notifications settings</a>
-        to configure the alert email address for the expiring secret.
+        to configure the alert email address for the expiring credential.
       </p>
 
       <label class="check">
@@ -91,7 +128,8 @@
       </label>
       <p class="small muted">
         Required only when you submit a <strong>new client secret</strong> —
-        confirms the expiry date above reflects the new secret.
+        confirms the expiry date above reflects the new secret. Certificate
+        expiry is tracked automatically.
       </p>
     </fieldset>
 
@@ -102,8 +140,91 @@
 </section>
 
 <section class="card">
+  <h2>Certificate credential</h2>
+  <p class="small muted">
+    The relay generates the key pair itself — the private key is encrypted at
+    rest and never downloadable. You upload only the public
+    <code>.cer</code> to Entra. Because the app mints the certificate, its
+    expiry date is known and tracked automatically.
+  </p>
+
+  {# ---- Active certificate ---- #}
+  <h3>Active certificate</h3>
+  {% if has_active_cert %}
+    <table class="kv">
+      <tr><th>Status</th><td>
+        {% if cfg.uses_certificate %}
+          <span class="pill pill-ok">In use</span>
+        {% else %}
+          <span class="pill">Stored (client secret is live)</span>
+        {% endif %}
+      </td></tr>
+      <tr><th>Thumbprint</th><td><code>{{ cfg.cert_thumbprint }}</code></td></tr>
+      <tr><th>Expires</th><td>{{ cfg.cert_not_after }}</td></tr>
+      <tr><th>Created</th><td>{{ cfg.cert_created_at|dt if cfg.cert_created_at else "—" }}</td></tr>
+    </table>
+    <p><a class="btn" href="/config/tenant/cert/active.cer">Download .cer</a></p>
+  {% else %}
+    <p class="small muted">No certificate has been generated yet.</p>
+  {% endif %}
+
+  {# ---- Pending certificate (staged, not yet live) ---- #}
+  {% if has_pending_cert %}
+    <h3>Pending certificate</h3>
+    <p class="alert alert-warn">
+      A new certificate has been generated but is <strong>not yet in use</strong>.
+      Upload its <code>.cer</code> to the Entra app registration, then click
+      <strong>Activate</strong>. Activating switches the live credential to this
+      certificate.
+    </p>
+    <table class="kv">
+      <tr><th>Thumbprint</th><td><code>{{ cfg.cert_pending_thumbprint }}</code></td></tr>
+      <tr><th>Expires</th><td>{{ cfg.cert_pending_not_after }}</td></tr>
+      <tr><th>Created</th><td>{{ cfg.cert_pending_created_at|dt if cfg.cert_pending_created_at else "—" }}</td></tr>
+    </table>
+    <div class="row-actions">
+      <a class="btn" href="/config/tenant/cert/pending.cer">Download .cer</a>
+      <form method="post" action="/config/tenant/cert/activate" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-primary">Activate</button>
+      </form>
+      <form method="post" action="/config/tenant/cert/discard" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-danger">Discard</button>
+      </form>
+    </div>
+  {% endif %}
+
+  {# ---- Generate a new certificate ---- #}
+  <h3>{{ 'Rotate certificate' if has_active_cert else 'Generate certificate' }}</h3>
+  <p class="small muted">
+    Generating stages a new certificate without touching the live one, so it
+    never interrupts sending. Complete the upload + activate steps to switch.
+  </p>
+  <form method="post" action="/config/tenant/cert/generate">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>
+      Validity
+      <select name="cert_valid_years">
+        {% for y in cert_years %}
+          <option value="{{ y }}" {{ 'selected' if y == cert_default_years else '' }}>
+            {{ y }} year{{ 's' if y != 1 else '' }}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="row-actions">
+      <button type="submit" class="btn">
+        {{ 'Generate new certificate' if has_active_cert else 'Generate certificate' }}
+      </button>
+    </div>
+  </form>
+</section>
+
+<section class="card">
   <h2>Connection test</h2>
   <table class="kv">
+    <tr><th>Active method</th><td>{{ 'Certificate' if cfg and cfg.uses_certificate else 'Client secret' }}</td></tr>
     <tr><th>Last test</th><td>{{ cfg.last_test_at|dt if cfg else "—" }}</td></tr>
     <tr>
       <th>Result</th>
