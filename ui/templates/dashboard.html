@@ -50,8 +50,8 @@
       <tr>
         <th>Configured</th>
         <td>
-          {% if tenant and tenant.tenant_id and tenant.client_id and tenant.client_secret_enc %}
-            yes
+          {% if tenant and tenant.tenant_id and tenant.client_id and tenant.has_active_credential %}
+            yes <span class="small muted">({{ 'certificate' if tenant.uses_certificate else 'client secret' }})</span>
           {% else %}
             <span class="error">no</span>
           {% endif %}
