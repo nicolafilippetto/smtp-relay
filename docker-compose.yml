@@ -42,7 +42,12 @@ services:
     container_name: smtp-relay-smtp
     restart: unless-stopped
     ports:
+      # Plaintext submission — bind to the LAN only (set SMTP_BIND_HOST).
       - "${SMTP_BIND_HOST:-0.0.0.0}:${SMTP_BIND_PORT:-2525}:2525"
+      # TLS submission (STARTTLS) and implicit TLS (SMTPS) for internet-
+      # facing clients. Active only when a cert exists in the certs volume.
+      - "${SMTP_SUBMISSION_BIND_HOST:-0.0.0.0}:${SMTP_SUBMISSION_PORT:-587}:587"
+      - "${SMTP_SMTPS_BIND_HOST:-0.0.0.0}:${SMTP_SMTPS_PORT:-465}:465"
     environment:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
       DATABASE_URL: "sqlite+aiosqlite:////data/relay.db"
@@ -51,10 +56,16 @@ services:
       SMTP_LISTEN_PORT: "2525"
       SMTP_MAX_MESSAGE_SIZE: ${SMTP_MAX_MESSAGE_SIZE:-31457280}
       SMTP_MAX_RECIPIENTS: ${SMTP_MAX_RECIPIENTS:-100}
+      # TLS cert supplied via the shared certs volume (edge ACME store or
+      # the nginx self-signed pair). With no cert present, only the 2525
+      # plaintext listener starts.
+      SMTP_TLS_CERT: "/etc/smtp-relay/certs/fullchain.pem"
+      SMTP_TLS_KEY: "/etc/smtp-relay/certs/privkey.pem"
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:
       - data:/data
+      - certs:/etc/smtp-relay/certs:ro
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777

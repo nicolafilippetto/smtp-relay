@@ -21,6 +21,7 @@ import datetime as _dt
 import logging
 import os
 import signal
+import ssl
 from contextlib import suppress
 
 from aiosmtpd.controller import Controller
@@ -231,6 +232,145 @@ async def _pruner_loop(stop: asyncio.Event) -> None:
 
 
 # -----------------------------------------------------------------------------
+# SMTP listeners (plain LAN + optional TLS: STARTTLS 587 / implicit 465)
+# -----------------------------------------------------------------------------
+
+class _CaseInsensitiveController(Controller):
+    """Controller that builds our case-insensitive-AUTH SMTP subclass.
+
+    Without this, Windows clients that send `AUTH login ...` (lowercase)
+    get a 504 from aiosmtpd 1.4.6 because its mechanism lookup is
+    case-sensitive.
+    """
+
+    def factory(self):
+        return CaseInsensitiveAuthSMTP(self.handler, **self.SMTP_kwargs)
+
+
+def _tls_cert_path() -> str:
+    return os.environ.get("SMTP_TLS_CERT", "/etc/smtp-relay/certs/fullchain.pem")
+
+
+def _tls_key_path() -> str:
+    return os.environ.get("SMTP_TLS_KEY", "/etc/smtp-relay/certs/privkey.pem")
+
+
+def _build_tls_context() -> ssl.SSLContext | None:
+    """Build a server TLS context from the configured cert/key pair.
+
+    Returns None when no usable certificate is present, in which case
+    only the plaintext LAN listener is started (backward compatible).
+    The cert is expected to be supplied by the edge proxy's ACME store
+    (Traefik/Caddy) into the shared cert volume.
+    """
+    cert, key = _tls_cert_path(), _tls_key_path()
+    if not (os.path.exists(cert) and os.path.exists(key)):
+        return None
+    ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    try:
+        ctx.load_cert_chain(cert, key)
+    except (ssl.SSLError, OSError) as exc:
+        _log.error("Failed to load SMTP TLS cert %s / %s: %s", cert, key, exc)
+        return None
+    return ctx
+
+
+def build_smtp_controllers(handler, authenticator) -> list[Controller]:
+    """Return the SMTP controllers to run, all sharing one handler.
+
+    Always includes a plaintext listener for internal LAN clients. When
+    a TLS certificate is configured it also returns a STARTTLS
+    submission listener (587) and an implicit-TLS SMTPS listener (465),
+    both of which require AUTH to happen over TLS. Callers start()/stop()
+    each controller.
+    """
+    base = build_controller_kwargs()
+    hostname = base["hostname"]
+
+    controllers: list[Controller] = [
+        _CaseInsensitiveController(
+            handler,
+            hostname=hostname,
+            port=base["port"],
+            authenticator=authenticator,
+            auth_required=False,  # whitelisted IPs skip AUTH; gated in handlers
+            auth_require_tls=False,  # plaintext LAN listener
+        )
+    ]
+
+    tls_ctx = _build_tls_context()
+    if tls_ctx is not None:
+        starttls_port = int(os.environ.get("SMTP_STARTTLS_PORT", "587"))
+        implicit_port = int(os.environ.get("SMTP_IMPLICIT_TLS_PORT", "465"))
+        # 587: submission with mandatory STARTTLS; AUTH only after TLS.
+        controllers.append(
+            _CaseInsensitiveController(
+                handler,
+                hostname=hostname,
+                port=starttls_port,
+                authenticator=authenticator,
+                auth_required=False,
+                auth_require_tls=True,
+                require_starttls=True,
+                tls_context=tls_ctx,
+            )
+        )
+        # 465: implicit TLS (SMTPS) — the socket is TLS from the start.
+        controllers.append(
+            _CaseInsensitiveController(
+                handler,
+                hostname=hostname,
+                port=implicit_port,
+                ssl_context=tls_ctx,
+                authenticator=authenticator,
+                auth_required=False,
+                auth_require_tls=True,
+            )
+        )
+    return controllers
+
+
+async def _cert_reload_loop(
+    stop: asyncio.Event, controllers: list[Controller], handler, authenticator
+) -> None:
+    """Rebuild the listeners when the TLS certificate changes on disk.
+
+    The edge proxy renews the ACME cert into the shared volume; aiosmtpd
+    cannot hot-swap an SSLContext, so on an mtime change we stop the
+    listeners and start freshly-built ones. Never raises out of the loop.
+    """
+    cert = _tls_cert_path()
+    interval = 300.0
+    try:
+        last = os.path.getmtime(cert)
+    except OSError:
+        last = None
+    while not stop.is_set():
+        with suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+        if stop.is_set():
+            break
+        try:
+            mtime = os.path.getmtime(cert)
+        except OSError:
+            continue
+        if last is None or mtime == last:
+            last = mtime
+            continue
+        _log.info("SMTP TLS certificate changed; reloading listeners.")
+        try:
+            for c in list(controllers):
+                await asyncio.to_thread(c.stop)
+            controllers[:] = build_smtp_controllers(handler, authenticator)
+            for c in controllers:
+                await asyncio.to_thread(c.start)
+            last = mtime
+        except Exception as exc:  # pragma: no cover - defensive
+            _log.exception("TLS listener reload failed: %s", exc)
+
+
+# -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
 
@@ -259,31 +399,21 @@ async def _run() -> None:
         ),
     )
     authenticator = RelayAuthenticator()
-    controller_kwargs = build_controller_kwargs()
 
-    # Custom Controller that instantiates our SMTP subclass
-    # (case-insensitive AUTH mechanism parsing). Without this, Windows
-    # clients that send `AUTH login ...` (lowercase) get a 504 from
-    # aiosmtpd 1.4.6 because its mechanism lookup is case-sensitive.
-    class _Controller(Controller):
-        def factory(self):
-            return CaseInsensitiveAuthSMTP(self.handler, **self.SMTP_kwargs)
-
-    controller = _Controller(
-        handler,
-        hostname=controller_kwargs["hostname"],
-        port=controller_kwargs["port"],
-        authenticator=authenticator,
-        auth_required=False,  # whitelisted IPs skip AUTH; we gate in handlers
-        auth_require_tls=False,  # caller-facing TLS is optional on internal LAN
-    )
-    controller.start()
+    controllers = build_smtp_controllers(handler, authenticator)
+    for controller in controllers:
+        controller.start()
     _log.info(
-        "SMTP listener on %s:%s (max message size %d bytes)",
-        controller_kwargs["hostname"],
-        controller_kwargs["port"],
-        controller_kwargs["max_size"],
+        "SMTP listeners started on %s: ports %s (max message size %d bytes)",
+        build_controller_kwargs()["hostname"] or "0.0.0.0",
+        ", ".join(str(c.port) for c in controllers),
+        int(os.environ.get("SMTP_MAX_MESSAGE_SIZE", "31457280")),
     )
+    if len(controllers) == 1:
+        _log.info(
+            "SMTP TLS disabled (no cert at %s); plaintext listener only.",
+            _tls_cert_path(),
+        )
 
     # Background tasks.
     worker = QueueWorker(poll_interval_seconds=5.0)
@@ -291,6 +421,13 @@ async def _run() -> None:
     hb_task = asyncio.create_task(_heartbeat_loop(started_at, stop), name="heartbeat")
     prune_task = asyncio.create_task(_pruner_loop(stop), name="pruner")
     alert_task = asyncio.create_task(_alert_loop(stop), name="alerts")
+    # Only watch the cert when TLS listeners are actually running.
+    cert_reload_task: asyncio.Task[None] | None = None
+    if len(controllers) > 1:
+        cert_reload_task = asyncio.create_task(
+            _cert_reload_loop(stop, controllers, handler, authenticator),
+            name="cert-reload",
+        )
 
     # Signal handling.
     loop = asyncio.get_running_loop()
@@ -307,9 +444,14 @@ async def _run() -> None:
         await stop.wait()
     finally:
         _log.info("Shutting down...")
+        if cert_reload_task is not None:
+            cert_reload_task.cancel()
+            with suppress(Exception):
+                await cert_reload_task
         # Controller.stop is synchronous; run it in a thread so we don't
         # block the event loop while asyncio is unwinding.
-        await asyncio.to_thread(controller.stop)
+        for controller in list(controllers):
+            await asyncio.to_thread(controller.stop)
         await worker.stop()
         hb_task.cancel()
         prune_task.cancel()
