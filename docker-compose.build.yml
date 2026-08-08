@@ -18,6 +18,13 @@ services:
       dockerfile: ./ui/Dockerfile
     container_name: smtp-relay-ui
     restart: unless-stopped
+    # Contain a runaway process (leak / hot loop) so it cannot starve the
+    # host and take the whole stack down. Honoured by `docker compose up`.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 384M
     # The UI does NOT expose ports to the host; nginx is the entry point.
     expose:
       - "8000"
@@ -70,6 +77,11 @@ services:
       dockerfile: ./relay/Dockerfile
     container_name: smtp-relay-smtp
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 384M
     ports:
       # Default bind on all interfaces of the container; the operator MUST
       # restrict reachability at the Docker network / host firewall level.
@@ -109,6 +121,11 @@ services:
       dockerfile: ./nginx/Dockerfile
     container_name: smtp-relay-nginx
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
     ports:
       # Host keeps the conventional 80/443; the container listens unprivileged
       # on 8080/8443 (nginx runs as uid 101).
