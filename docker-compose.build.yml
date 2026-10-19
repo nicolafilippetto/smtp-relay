@@ -75,6 +75,10 @@ services:
       # restrict reachability at the Docker network / host firewall level.
       # See README -> Hardening.
       - "${SMTP_BIND_HOST:-0.0.0.0}:${SMTP_BIND_PORT:-2525}:2525"
+      # TLS submission (STARTTLS) and implicit TLS (SMTPS); active only
+      # when a cert exists in the certs volume.
+      - "${SMTP_SUBMISSION_BIND_HOST:-0.0.0.0}:${SMTP_SUBMISSION_PORT:-587}:587"
+      - "${SMTP_SMTPS_BIND_HOST:-0.0.0.0}:${SMTP_SMTPS_PORT:-465}:465"
     environment:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
       DATABASE_URL: "sqlite+aiosqlite:////data/relay.db"
@@ -83,11 +87,16 @@ services:
       SMTP_LISTEN_PORT: "2525"
       # Maximum message size (bytes). Defaults to 30 MiB.
       SMTP_MAX_MESSAGE_SIZE: ${SMTP_MAX_MESSAGE_SIZE:-31457280}
+      # TLS cert supplied via the shared certs volume. With no cert
+      # present, only the 2525 plaintext listener starts.
+      SMTP_TLS_CERT: "/etc/smtp-relay/certs/fullchain.pem"
+      SMTP_TLS_KEY: "/etc/smtp-relay/certs/privkey.pem"
       # Retention minimum (hard-coded in source: 3 days) is enforced inside.
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:
       - data:/data
+      - certs:/etc/smtp-relay/certs:ro
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
