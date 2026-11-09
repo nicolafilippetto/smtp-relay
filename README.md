@@ -408,10 +408,17 @@ non-root user with `cap_drop: ALL`, `no-new-privileges`, and a read-only root
 filesystem. nginx uses the `nginxinc/nginx-unprivileged` image (uid 101) and
 listens on 8080/8443 inside the container; the host ports stay 80/443.
 
-> **Upgrading from a root nginx image:** if you relied on the auto-generated
-> self-signed certificate, the existing `smtp-relay-certs` volume is owned by
-> root and the new unprivileged nginx cannot read the private key. Re-own it
-> once (real certificates you mount yourself are unaffected):
+> **Upgrading from a root nginx image (before v2.2.0):** two one-time changes
+> are needed, because the `nginx:latest` image now listens on 8080/8443.
+>
+> 1. **Port mappings.** If your own `docker-compose.yml` still maps
+>    `80:80` / `443:443`, change them to `80:8080` / `443:8443` (as in the
+>    current compose file). Otherwise the containers report healthy but every
+>    HTTP/HTTPS connection is reset.
+> 2. **Certificate volume.** If you relied on the auto-generated self-signed
+>    certificate, the existing `smtp-relay-certs` volume is owned by root and
+>    the new unprivileged nginx cannot read the private key. Re-own it once
+>    (real certificates you mount yourself are unaffected):
 >
 > ```sh
 > docker run --rm -v smtp-relay-certs:/certs alpine chown -R 101:101 /certs
