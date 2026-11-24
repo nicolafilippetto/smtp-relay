@@ -4,6 +4,13 @@ services:
     image: ghcr.io/nicolafilippetto/smtp-relay/ui:latest
     container_name: smtp-relay-ui
     restart: unless-stopped
+    # Contain a runaway process (leak / hot loop) so it cannot starve the
+    # host and take the whole stack down. Honoured by `docker compose up`.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 384M
     expose:
       - "8000"
     environment:
@@ -41,6 +48,11 @@ services:
     image: ghcr.io/nicolafilippetto/smtp-relay/relay:latest
     container_name: smtp-relay-smtp
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 384M
     ports:
       - "${SMTP_BIND_HOST:-0.0.0.0}:${SMTP_BIND_PORT:-2525}:2525"
     environment:
@@ -72,6 +84,11 @@ services:
     image: ghcr.io/nicolafilippetto/smtp-relay/nginx:latest
     container_name: smtp-relay-nginx
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
     ports:
       # Host keeps the conventional 80/443; the container listens unprivileged
       # on 8080/8443 (nginx runs as uid 101).
