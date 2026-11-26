@@ -405,7 +405,7 @@ docker compose restart nginx
 
 **Containers run unprivileged:** every service (UI, relay, nginx) runs as a
 non-root user with `cap_drop: ALL`, `no-new-privileges`, and a read-only root
-filesystem. nginx uses the `nginxinc/nginx-unprivileged` image (uid 101) and
+filesystem. nginx uses the `nginx/nginx-unprivileged` image (uid 101) and
 listens on 8080/8443 inside the container; the host ports stay 80/443.
 
 > **Upgrading from a root nginx image (before v2.2.0):** two one-time changes
