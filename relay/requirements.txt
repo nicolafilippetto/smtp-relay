@@ -8,7 +8,7 @@
 aiosmtpd==1.4.6
 
 # Microsoft Authentication Library for Client Credentials Grant.
-msal==1.36.0
+msal==1.39.0
 
 # HTTP client used by the Graph wrapper.
 httpx==0.28.1
