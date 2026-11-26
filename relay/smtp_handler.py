@@ -78,6 +78,26 @@ def _peer_ip(session: Session) -> str | None:
         return None
 
 
+# Failed AUTH results; see the RelayAuthenticator docstring for why
+# `handled=False` is required. A fresh AuthResult per call, since it is
+# a mutable object.
+def _auth_invalid() -> AuthResult:
+    """Wrong / unknown / malformed credentials.
+
+    aiosmtpd sends "535 5.7.8 Authentication credentials invalid".
+    """
+    return AuthResult(success=False, handled=False)
+
+
+def _auth_tempfail() -> AuthResult:
+    """The credential check itself failed (DB error, timeout)."""
+    return AuthResult(
+        success=False,
+        handled=False,
+        message="454 4.7.0 Temporary authentication failure",
+    )
+
+
 class RelayAuthenticator:
     """Callable used by aiosmtpd for SMTP AUTH.
 
@@ -91,6 +111,14 @@ class RelayAuthenticator:
     event loop on a worker thread. This is safe even though aiosmtpd's
     own loop is currently running: we never touch it, we spawn our
     own.
+
+    Failures MUST be returned with `handled=False`. In aiosmtpd 1.4.6
+    `AuthResult.handled` defaults to True, which means "the authenticator
+    already pushed the reply itself": `smtp_AUTH` then sends nothing and
+    the client hangs until its own timeout. With `handled=False` and no
+    `message`, aiosmtpd sends "535 5.7.8 Authentication credentials
+    invalid"; a `message`, if given, is pushed verbatim, so it must be a
+    complete SMTP reply line.
     """
 
     def __init__(self) -> None:
@@ -110,13 +138,13 @@ class RelayAuthenticator:
 
         if not isinstance(auth_data, LoginPassword):
             _log.info("AUTH mech=%s rejected: unsupported auth type", mechanism)
-            return AuthResult(success=False, message="Unsupported auth type.")
+            return _auth_invalid()
 
         try:
             username = auth_data.login.decode("utf-8", errors="replace")
             password = auth_data.password.decode("utf-8", errors="replace")
         except Exception:
-            return AuthResult(success=False, message="Malformed credentials.")
+            return _auth_invalid()
 
         # Run the async DB work in a dedicated loop on a worker thread.
         # We block the calling (SMTP) thread for the duration but the
@@ -129,13 +157,16 @@ class RelayAuthenticator:
             outcome = future.result(timeout=15)
         except Exception as exc:
             _log.exception("auth check crashed: %s", exc)
-            return AuthResult(success=False, message="Authentication failed.")
+            # Not the client's fault: answer with a temporary failure
+            # (RFC 4954) so it retries instead of treating the
+            # credentials as wrong.
+            return _auth_tempfail()
 
         if outcome.ok:
             _log.info("AUTH user=%s ip=%s: success", username, ip)
             return AuthResult(success=True, handled=True, auth_data=username)
         _log.info("AUTH user=%s ip=%s: failure (%s)", username, ip, outcome.reason)
-        return AuthResult(success=False, message="Authentication failed.")
+        return _auth_invalid()
 
 
 def _run_auth_check(ip: str | None, username: str, password: str):
