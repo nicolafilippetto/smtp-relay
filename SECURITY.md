@@ -17,28 +17,31 @@ source project maintained on a best-effort basis.
 
 ## Known Accepted Risks
 
-The Docker image is based on `python:3.12-slim-bookworm` (Debian 12). Trivy
-reports several OS-level CVEs that are **not fixable at this time** because
-Debian has not yet released patches for them. These are tracked and will be
-resolved automatically when upstream patches are available via periodic image
-rebuilds.
+The `ui` and `relay` images are based on `python:3.12-slim-trixie` (Debian 13).
+Debian 12 (bookworm), used up to v2.7.3, left full Debian security support on
+2026-07-11 and is in LTS only.
+
+Last Trivy scan (2026-11-26, MEDIUM and above): **no CRITICAL findings** in
+any image, and none at all in the `nginx` image. The remaining HIGH/MEDIUM
+findings in `ui` and `relay` are OS-level CVEs that are **not fixable at this
+time** because Debian has not released patches for them (status `affected` /
+`fix_deferred`). They are resolved automatically by the periodic image rebuilds
+(`apt-get upgrade`) once Debian ships fixes. Notable entry:
 
 | CVE | Package | Severity | Status |
 |---|---|---|---|
-| CVE-2026-0861 | glibc | HIGH | No fix available |
 | CVE-2025-69720 | ncurses | HIGH | No fix available |
-| CVE-2025-7458 | libsqlite3 | CRITICAL | No fix available |
-| CVE-2026-29111 | systemd | HIGH | No fix available |
-| CVE-2023-45853 | zlib | CRITICAL | `will_not_fix` — not exploitable in this context |
-| CVE-2026-8376 | perl-base | CRITICAL | `affected` — 32-bit builds only; images are 64-bit |
-| CVE-2026-42496 | perl-base | CRITICAL | `fix_deferred` — Archive::Tar path traversal, module not used |
 
-All Python dependency CVEs have been resolved. The image is rebuilt periodically
-to pick up OS-level patches as they are released by Debian.
+The CVEs previously accepted on Debian 12 (glibc CVE-2026-0861, libsqlite3
+CVE-2025-7458, systemd CVE-2026-29111, zlib CVE-2023-45853, perl-base
+CVE-2026-8376 / CVE-2026-42496) are no longer reported.
 
-These accepted CVEs are also listed in [`.trivyignore`](.trivyignore) so that a
-Trivy scan configured to fail on CRITICAL findings passes with the risk
-acceptance recorded in version control. Keep the two lists in sync.
+All CVEs in the Python dependencies (`requirements.txt`) have been resolved.
+
+[`.trivyignore`](.trivyignore) holds the accepted CVEs, so that a Trivy scan
+configured to fail on CRITICAL findings passes with the risk acceptance
+recorded in version control. It is currently empty. Keep it in sync with this
+section.
 
 ---
 

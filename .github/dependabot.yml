@@ -18,7 +18,7 @@ updates:
       prefix: "build(deps)"
     ignore:
       # Stay on the Python 3.12 line: keep receiving security/patch refreshes
-      # (digest bumps of the 3.12-slim-bookworm tag) but NOT feature jumps
+      # (digest bumps of the 3.12-slim-trixie tag) but NOT feature jumps
       # (3.13, 3.14, ...). Python 3.12 gets upstream security fixes until
       # ~Oct 2028; minor/major upgrades are done deliberately and tested by hand.
       # nginx is intentionally NOT ignored: its minor bumps carry security fixes
