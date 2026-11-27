@@ -20,6 +20,19 @@ on:
       - 'relay/**'
       - 'ui/**'
       - '.github/workflows/windows-build.yml'
+  # Build every pull request into main that touches the Windows package or the
+  # code it bundles, Dependabot bumps of windows/requirements.txt included, so
+  # a dependency update cannot break the installer unnoticed. Pull requests
+  # from Dependabot or forks get no secrets, so the optional signing step is
+  # skipped there; the installer is only kept as a build artifact.
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'windows/**'
+      - 'common/**'
+      - 'relay/**'
+      - 'ui/**'
+      - '.github/workflows/windows-build.yml'
 
 permissions:
   contents: read
