@@ -73,8 +73,18 @@ Automated:
   that have a fix, and when the base image's OS has reached end of life. On
   `main` and on the weekly run the findings also go to the Security tab. A
   failing weekly run means the images need a rebuild or an update.
+- **Smoke test** (`.github/workflows/smoke-test.yml`): on every pull request
+  into `main` and every push to `main`, starts the whole stack and uses it
+  (admin login with password + TOTP, every UI page reachable from the
+  dashboard, SMTP AUTH and a message accepted into the queue, no tracebacks
+  in the logs). A dependency update that builds but breaks the app fails here.
 - **Windows build** (`.github/workflows/windows-build.yml`) also runs on pull
   requests that touch the Windows package, Dependabot's included.
+
+Review Dependabot pull requests before merging, even when green: read the
+changelog of any update that jumps several versions (FastAPI 0.x releases, for
+example, can contain breaking changes), and merge only when the security
+scan, the smoke test and the Windows build all pass.
 
 Manual, every few months (no tool reports these):
 

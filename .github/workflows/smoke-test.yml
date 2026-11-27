@@ -1,0 +1,100 @@
+name: Smoke test
+
+# Starts the whole stack (ui, relay, nginx) from docker-compose.build.yml and
+# uses it like an operator and a mail client would:
+#   - UI through nginx: HTTP->HTTPS redirect, TLS 1.3, admin login with
+#     password + TOTP, and every page reachable from the dashboard;
+#   - relay: SMTP AUTH with a wrong password (535) and the right one (235),
+#     and a message accepted into the queue;
+#   - no Python tracebacks in the ui and relay logs.
+#
+# Building and scanning the images (security-scan.yml) does not show that
+# they work: a dependency update can build fine and still break the app at
+# runtime. This job runs on every pull request into main, Dependabot's
+# included, and on every push to main.
+#
+# Test data only (.github/smoke/seed.py), on a throwaway stack that is
+# removed at the end. No Microsoft tenant is contacted successfully: queued
+# mail just stays pending.
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      COMPOSE_FILE: docker-compose.build.yml
+      COMPOSE_PROJECT_NAME: smtp-relay-smoke
+      HTTP_BIND_HOST: 127.0.0.1
+      HTTPS_BIND_HOST: 127.0.0.1
+      SMTP_BIND_HOST: 127.0.0.1
+      HTTP_PORT: "18080"
+      HTTPS_PORT: "18443"
+      SMTP_BIND_PORT: "12525"
+      SMOKE_HTTP_PORT: "18080"
+      SMOKE_HTTPS_PORT: "18443"
+      SMOKE_SMTP_PORT: "12525"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Generate throwaway keys and test credentials
+        run: |
+          python3 - >> "$GITHUB_ENV" <<'EOF'
+          import base64, os, secrets
+          print("ENCRYPTION_KEY=" + base64.urlsafe_b64encode(os.urandom(32)).decode())
+          print("SECRET_KEY=" + secrets.token_hex(32))
+          print("SMOKE_ADMIN_PASSWORD=" + secrets.token_urlsafe(18))
+          print("SMOKE_SMTP_PASSWORD=" + secrets.token_urlsafe(18))
+          # 160-bit secret, like the ones the UI generates.
+          print("SMOKE_TOTP_SECRET=" + base64.b32encode(os.urandom(20)).decode())
+          EOF
+
+      - name: Build and start the stack
+        run: docker compose up -d --build
+
+      - name: Wait for the UI to finish its migrations and bootstrap
+        run: |
+          for i in $(seq 1 90); do
+            if docker compose logs ui 2>&1 | grep -q "Application startup complete"; then exit 0; fi
+            sleep 2
+          done
+          echo "UI did not start"; exit 1
+
+      - name: Seed test data
+        run: |
+          docker compose exec -T \
+            -e SMOKE_ADMIN_PASSWORD -e SMOKE_TOTP_SECRET -e SMOKE_SMTP_PASSWORD \
+            ui python - < .github/smoke/seed.py
+
+      - name: Run checks
+        run: python3 .github/smoke/check.py
+
+      - name: No tracebacks in the ui and relay logs
+        run: |
+          if docker compose logs ui relay 2>&1 | grep -n "Traceback"; then
+            echo "::error::Python traceback in the container logs (see the 'Container logs' step)"
+            exit 1
+          fi
+
+      - name: Container logs
+        if: always()
+        run: docker compose logs --no-color --timestamps
+
+      - name: Remove the stack
+        if: always()
+        run: docker compose down -v
