@@ -147,7 +147,9 @@ def _verify_totp_consume(user: User, code: str) -> bool:
     step = now // totp.interval
     matched: int | None = None
     for offset in (0, -1, 1):
-        if hmac.compare_digest(str(totp.at(now, offset)), code):
+        # counter_offset by keyword: it is keyword-only since pyotp 2.12
+        # (a positional offset raises TypeError there).
+        if hmac.compare_digest(str(totp.at(now, counter_offset=offset)), code):
             matched = step + offset
             break
     if matched is None:
