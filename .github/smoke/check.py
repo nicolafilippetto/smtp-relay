@@ -44,7 +44,9 @@ def check(name: str, ok: bool, info: object = "") -> None:
 
 
 # The stack uses a self-signed certificate: no verification, test only.
+# TLS 1.0/1.1 are refused explicitly; nginx is expected to negotiate 1.3.
 ctx = ssl.create_default_context()
+ctx.minimum_version = ssl.TLSVersion.TLSv1_2
 ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
 

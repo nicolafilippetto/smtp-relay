@@ -52,16 +52,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      # The values only live as long as this job's throwaway stack, but the
+      # repository is public: mask them so they never appear in the logs.
       - name: Generate throwaway keys and test credentials
         run: |
-          python3 - >> "$GITHUB_ENV" <<'EOF'
+          python3 - <<'EOF'
           import base64, os, secrets
-          print("ENCRYPTION_KEY=" + base64.urlsafe_b64encode(os.urandom(32)).decode())
-          print("SECRET_KEY=" + secrets.token_hex(32))
-          print("SMOKE_ADMIN_PASSWORD=" + secrets.token_urlsafe(18))
-          print("SMOKE_SMTP_PASSWORD=" + secrets.token_urlsafe(18))
-          # 160-bit secret, like the ones the UI generates.
-          print("SMOKE_TOTP_SECRET=" + base64.b32encode(os.urandom(20)).decode())
+          values = {
+              "ENCRYPTION_KEY": base64.urlsafe_b64encode(os.urandom(32)).decode(),
+              "SECRET_KEY": secrets.token_hex(32),
+              "SMOKE_ADMIN_PASSWORD": secrets.token_urlsafe(18),
+              "SMOKE_SMTP_PASSWORD": secrets.token_urlsafe(18),
+              # 160-bit secret, like the ones the UI generates.
+              "SMOKE_TOTP_SECRET": base64.b32encode(os.urandom(20)).decode(),
+          }
+          for value in values.values():
+              print(f"::add-mask::{value}", flush=True)
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              for name, value in values.items():
+                  env.write(f"{name}={value}\n")
           EOF
 
       - name: Build and start the stack
