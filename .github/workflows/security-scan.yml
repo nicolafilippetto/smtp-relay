@@ -1,0 +1,102 @@
+name: Security scan
+
+# Builds the three Docker images (relay, ui, nginx) exactly as published and
+# scans them with Trivy:
+#   - on every pull request into main (Dependabot PRs included), so a change
+#     that breaks the build or adds a fixable vulnerability shows up before it
+#     is merged;
+#   - on every push to main;
+#   - once a week, because new CVEs are published against images that did not
+#     change. A failing scheduled run is the signal that a rebuild or an
+#     update is needed (GitHub e-mails workflow failures).
+#
+# The job fails on HIGH/CRITICAL vulnerabilities that HAVE a fix (only those
+# can be acted on), and when the base image's OS has reached end of life.
+# Accepted risks go in .trivyignore (see SECURITY.md). Outside pull requests,
+# the findings are also uploaded to the repository's Security tab.
+#
+# Trivy runs from its official image pinned by digest, not through a
+# third-party action. To update it, take the digest of the new tag from
+# Docker Hub (aquasec/trivy) and change TRIVY_IMAGE.
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  schedule:
+    # Mondays 05:17 UTC.
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TRIVY_IMAGE: aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+
+jobs:
+  scan:
+    name: Scan ${{ matrix.service }} image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload-sarif (not used on pull requests)
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [relay, ui, nginx]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build image
+        run: docker build -f "${{ matrix.service }}/Dockerfile" -t "scan/${{ matrix.service }}:ci" .
+
+      # One Trivy database download per job, shared by the two scans below.
+      # The repository is mounted so Trivy picks up .trivyignore.
+      - name: Scan for the Security tab (SARIF)
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p "$RUNNER_TEMP/trivy-cache"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$RUNNER_TEMP/trivy-cache:/root/.cache/trivy" \
+            -v "$GITHUB_WORKSPACE:/src" -w /src \
+            "$TRIVY_IMAGE" image \
+              --scanners vuln \
+              --severity MEDIUM,HIGH,CRITICAL \
+              --ignore-unfixed \
+              --format sarif \
+              --output "trivy-${{ matrix.service }}.sarif" \
+              "scan/${{ matrix.service }}:ci"
+
+      # Pull requests (Dependabot's and forks' included) get a read-only token,
+      # so the upload only runs on main, on the schedule and on manual runs.
+      - name: Upload to the Security tab
+        if: github.event_name != 'pull_request'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-${{ matrix.service }}.sarif
+          category: trivy-${{ matrix.service }}
+
+      - name: Fail on fixable HIGH/CRITICAL vulnerabilities or an end-of-life OS
+        run: |
+          mkdir -p "$RUNNER_TEMP/trivy-cache"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$RUNNER_TEMP/trivy-cache:/root/.cache/trivy" \
+            -v "$GITHUB_WORKSPACE:/src" -w /src \
+            "$TRIVY_IMAGE" image \
+              --scanners vuln \
+              --severity HIGH,CRITICAL \
+              --ignore-unfixed \
+              --exit-code 1 \
+              --exit-on-eol 1 \
+              --format table \
+              "scan/${{ matrix.service }}:ci"

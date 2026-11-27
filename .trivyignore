@@ -2,19 +2,32 @@
 # Trivy ignore list — accepted base-image vulnerabilities
 # =============================================================================
 # The relay and ui images share the python:3.12-slim-trixie (Debian 13) base.
-# List here only CRITICAL CVEs that have NO fixed Debian version available, so
-# they cannot be resolved by patching, `apt-get upgrade`, or rebasing onto a
-# newer base-image digest. Each one is accepted as documented risk — see the
-# "Known Accepted Risks" section in SECURITY.md for the full rationale.
+# List here only CVEs that cannot be fixed by patching, `apt-get upgrade` or a
+# newer base-image digest, or that do not apply to these images. Each one is
+# accepted as documented risk — see the "Known Accepted Risks" section in
+# SECURITY.md for the full rationale.
 #
-# This file is auto-loaded by Trivy from the repository root, so a scan
-# configured to fail on CRITICAL findings passes with the acceptance recorded
-# in version control. Re-review when Debian ships fixes and drop resolved entries.
+# This file is auto-loaded by Trivy from the repository root, so the scan in
+# .github/workflows/security-scan.yml (which fails on fixable HIGH/CRITICAL
+# findings) passes with the acceptance recorded in version control.
+# Re-review when fixes ship and drop resolved entries.
 #
-# Last reviewed: 2026-11-26
+# Last reviewed: 2026-11-27
 # -----------------------------------------------------------------------------
 
-# No accepted CVEs at the moment: the move to Debian 13 cleared the four
-# entries that were listed for Debian 12 (CVE-2023-45853 zlib, CVE-2026-8376
-# and CVE-2026-42496 perl-base, CVE-2025-7458 libsqlite3), and Trivy reports
-# no CRITICAL findings for the current images.
+# The move to Debian 13 cleared the four entries that were listed for Debian 12
+# (CVE-2023-45853 zlib, CVE-2026-8376 and CVE-2026-42496 perl-base,
+# CVE-2025-7458 libsqlite3).
+#
+# Entries may carry an expiry date (`exp:YYYY-MM-DD`): after it Trivy reports
+# the CVE again, which forces a new review instead of a permanent ignore.
+
+# setuptools 70.3.0 (ui and relay images) — not installed as a package. pip
+# vendors only `pkg_resources` from setuptools 70.3.0 and lists that version in
+# pip/_vendor/vendor.txt, which is what Trivy reports. The vulnerable code is
+# not shipped: CVE-2025-47273 (HIGH) is in setuptools' PackageIndex.download,
+# CVE-2026-59890 (MEDIUM) in its sdist MANIFEST.in handling. Neither module is
+# in the image, and no sdist is built at runtime. Drop these lines once pip
+# vendors a fixed setuptools (78.1.1 / 83.0.0 or later).
+CVE-2025-47273 exp:2027-05-31
+CVE-2026-59890 exp:2027-05-31

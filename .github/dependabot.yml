@@ -1,6 +1,17 @@
-# Keep the digest-pinned base images up to date automatically.
-# Dependabot opens a PR whenever a new digest is published for the pinned tags
-# in each Dockerfile; the docker-publish workflow then rebuilds and republishes.
+# Dependabot version updates.
+#
+# Three ecosystems, each checked weekly:
+#   - docker:         digest bumps of the pinned base images (relay, ui, nginx)
+#   - pip:            the pinned Python dependencies (relay, ui, windows)
+#   - github-actions: the actions used by the workflows
+#
+# Every Dependabot PR is built and scanned by security-scan.yml (Docker images)
+# and windows-build.yml (Windows package) before it can be merged; after the
+# merge, docker-publish.yml rebuilds and republishes the images.
+#
+# What Dependabot can NOT see, and needs a periodic manual check (see
+# SECURITY.md, "Keeping dependencies up to date"): a base image that is moved
+# to a new name on Docker Hub, and a new Debian release for the Python images.
 version: 2
 updates:
   - package-ecosystem: "docker"
@@ -27,3 +38,51 @@ updates:
         update-types:
           - "version-update:semver-major"
           - "version-update:semver-minor"
+
+  # The three requirements files pin the same versions and must stay in sync
+  # (see the header of windows/requirements.txt). With `directories` plus a
+  # group, Dependabot updates a dependency in all three files in ONE pull
+  # request, so they cannot drift apart.
+  - package-ecosystem: "pip"
+    directories:
+      - "/relay"
+      - "/ui"
+      - "/windows"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      # Minor and patch updates of everything except aiosmtpd: one PR a week.
+      # Major updates are not in the group, so each one gets its own PR.
+      python-minor-patch:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "aiosmtpd"
+        update-types:
+          - "minor"
+          - "patch"
+    # aiosmtpd always gets its own PR: relay/smtp_handler.py works around two
+    # aiosmtpd 1.4.6 internals (case-sensitive AUTH mechanism lookup, and the
+    # authenticator being called synchronously with AuthResult.handled
+    # defaulting to True). Re-check both before merging a bump.
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github_actions"
+    commit-message:
+      prefix: "ci(deps)"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
