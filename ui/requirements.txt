@@ -41,5 +41,5 @@ pyotp==2.9.0
 qrcode==8.2
 
 # Microsoft Graph stack (used by the "test connection" button).
-msal==1.36.0
+msal==1.39.0
 httpx==0.28.1
