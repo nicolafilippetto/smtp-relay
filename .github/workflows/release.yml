@@ -144,13 +144,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Create and push git tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a ${{ needs.version.outputs.tag }} -m "Release ${{ needs.version.outputs.tag }}"
-          git push origin ${{ needs.version.outputs.tag }}
-
       - name: Login to ghcr.io
         uses: docker/login-action@v4.8.0
         with:
@@ -199,6 +192,27 @@ jobs:
         with:
           name: windows-installer
           path: dist-windows
+
+      # Tag only once the images are pushed and the installer is in hand: a
+      # failure in those steps then leaves no orphan tag, and the job can just
+      # be re-run. Re-runnable: a tag that already points at this commit is
+      # kept; one that points elsewhere stops the release.
+      - name: Create and push git tag
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            if [ "$(git rev-parse "$TAG^{commit}")" != "$GITHUB_SHA" ]; then
+              echo "::error::Tag $TAG already exists on another commit"
+              exit 1
+            fi
+            echo "Tag $TAG already points at this commit; keeping it."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+          fi
 
       - name: Create GitHub Release
         env:
