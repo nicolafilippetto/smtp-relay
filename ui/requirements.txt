@@ -34,7 +34,7 @@ alembic==1.18.4
 bcrypt==5.0.0
 
 # Fernet symmetric encryption.
-cryptography>=46.0.5
+cryptography>=50.0.2
 
 # TOTP (RFC 6238) + provisioning URI.
 pyotp==2.9.0
