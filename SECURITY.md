@@ -73,6 +73,18 @@ Automated:
   that have a fix, and when the base image's OS has reached end of life. On
   `main` and on the weekly run the findings also go to the Security tab. A
   failing weekly run means the images need a rebuild or an update.
+- **nginx advisories** (same workflow): Trivy cannot see CVEs in nginx
+  itself, because nginx comes from the nginx.org repository, not from Alpine.
+  The nginx version inside the image is checked against
+  <https://nginx.org/en/security_advisories.html> on every run, and the job
+  fails if any advisory applies.
+- **Full vulnerability report** (same workflow, weekly and on manual runs):
+  every severity, with or without a fix, accepted ones included, so the
+  remaining risk stays visible. It never fails the run. Open the latest
+  *Security scan* run in the Actions tab: the summary shows, per image, the
+  counts by severity (fix available / no fix yet / accepted) and the list of
+  CRITICAL and HIGH findings; the full JSON is attached as an artifact for 90
+  days. To get one on demand: Actions → Security scan → *Run workflow*.
 - **Smoke test** (`.github/workflows/smoke-test.yml`): on every pull request
   into `main` and every push to `main`, starts the whole stack and uses it
   (admin login with password + TOTP, every UI page reachable from the

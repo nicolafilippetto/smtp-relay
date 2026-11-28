@@ -11,9 +11,15 @@ name: Security scan
 #     update is needed (GitHub e-mails workflow failures).
 #
 # The job fails on HIGH/CRITICAL vulnerabilities that HAVE a fix (only those
-# can be acted on), and when the base image's OS has reached end of life.
-# Accepted risks go in .trivyignore (see SECURITY.md). Outside pull requests,
-# the findings are also uploaded to the repository's Security tab.
+# can be acted on), when the base image's OS has reached end of life, and
+# when the nginx version in the nginx image is affected by an nginx.org
+# security advisory (Trivy cannot see those). Accepted risks go in
+# .trivyignore (see SECURITY.md). Outside pull requests, the fixable findings
+# are also uploaded to the repository's Security tab.
+#
+# The weekly and manual runs also produce a full, informational report:
+# every severity, with or without a fix, accepted ones included. Read it in
+# the run's summary page; the JSON is kept as an artifact for 90 days.
 #
 # Trivy runs from its official image pinned by digest, not through a
 # third-party action. To update it, take the digest of the new tag from
@@ -100,3 +106,53 @@ jobs:
               --exit-on-eol 1 \
               --format table \
               "scan/${{ matrix.service }}:ci"
+
+      # Trivy cannot see CVEs in nginx itself: nginx comes from the nginx.org
+      # Alpine repository, which Trivy has no advisory data for (it reported
+      # nginx 1.31.7 with zero CVEs while 11 published advisories applied).
+      # Check the version in the image against nginx.org's own advisories.
+      - name: nginx version against the nginx.org security advisories
+        if: ${{ !cancelled() && matrix.service == 'nginx' }}
+        run: |
+          version=$(docker run --rm --entrypoint nginx scan/nginx:ci -v 2>&1 | sed -n 's|^nginx version: nginx/||p')
+          echo "nginx in the image: ${version:-unknown}"
+          set +e
+          python3 .github/scripts/check_nginx_advisories.py "$version" | tee nginx-advisories.txt
+          rc=${PIPESTATUS[0]}
+          {
+            echo "### nginx $version against the nginx.org security advisories"
+            echo '```'
+            sed 's/^::error:://' nginx-advisories.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
+      # Informational, never fails: every severity, with or without a fix,
+      # including the CVEs accepted in .trivyignore, so the remaining risk is
+      # visible. Runs on the weekly schedule and on manual runs; the summary
+      # is on the run's page and the full JSON is kept as an artifact.
+      - name: Full vulnerability report (all severities)
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/trivy-cache"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$RUNNER_TEMP/trivy-cache:/root/.cache/trivy" \
+            -v "$GITHUB_WORKSPACE:/src" -w /src \
+            "$TRIVY_IMAGE" image \
+              --scanners vuln \
+              --ignorefile "" \
+              --format json \
+              --output "trivy-full-${{ matrix.service }}.json" \
+              "scan/${{ matrix.service }}:ci"
+          python3 .github/scripts/trivy_report.py \
+            "trivy-full-${{ matrix.service }}.json" "${{ matrix.service }}" .trivyignore \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the full report
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: trivy-full-${{ matrix.service }}
+          path: trivy-full-${{ matrix.service }}.json
+          retention-days: 90
