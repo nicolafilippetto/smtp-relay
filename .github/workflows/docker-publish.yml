@@ -7,6 +7,15 @@ on:
     # AND the Windows installer at the same version. Triggering here on tags too
     # would double-build the images, so it is intentionally omitted.
 
+# Every push to main republishes the :latest images, which docker-compose.yml
+# pulls. Several merges in a row start several runs, and without this an older
+# run finishing last could leave :latest on an older commit (or mix commits
+# across relay/ui/nginx). A newer push cancels the run in progress, so only the
+# newest commit is published and it always pushes all three images.
+concurrency:
+  group: docker-publish-latest
+  cancel-in-progress: true
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
