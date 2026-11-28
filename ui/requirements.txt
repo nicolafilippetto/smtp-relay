@@ -24,7 +24,9 @@ itsdangerous==2.2.0
 slowapi==0.1.9
 
 # ORM + async driver + migrations.
-SQLAlchemy==2.0.49
+# The [asyncio] extra installs greenlet, which SQLAlchemy's asyncio layer
+# needs; SQLAlchemy 2.1+ no longer installs it by default.
+SQLAlchemy[asyncio]==2.0.49
 aiosqlite==0.22.1
 alembic==1.18.4
 

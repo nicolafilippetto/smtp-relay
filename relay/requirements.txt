@@ -14,7 +14,9 @@ msal==1.39.0
 httpx==0.28.1
 
 # ORM + async driver.
-SQLAlchemy==2.0.49
+# The [asyncio] extra installs greenlet, which SQLAlchemy's asyncio layer
+# needs; SQLAlchemy 2.1+ no longer installs it by default.
+SQLAlchemy[asyncio]==2.0.49
 aiosqlite==0.22.1
 
 # Password hashing (used to verify SMTP account passwords).

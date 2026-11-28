@@ -5,9 +5,13 @@
 #   - pip:            the pinned Python dependencies (relay, ui, windows)
 #   - github-actions: the actions used by the workflows
 #
-# Every Dependabot PR is built and scanned by security-scan.yml (Docker images)
-# and windows-build.yml (Windows package) before it can be merged; after the
-# merge, docker-publish.yml rebuilds and republishes the images.
+# Every Dependabot PR is checked before it can be merged: security-scan.yml
+# builds and scans the Docker images, smoke-test.yml starts the stack and
+# uses it (UI login with TOTP, every UI page, SMTP AUTH and a queued message),
+# windows-build.yml builds the Windows package. A green build alone does not
+# prove an update works: SQLAlchemy 2.1 and pyotp 2.12 both built fine and
+# broke the app at runtime. After the merge, docker-publish.yml rebuilds and
+# republishes the images.
 #
 # What Dependabot can NOT see, and needs a periodic manual check (see
 # SECURITY.md, "Keeping dependencies up to date"): a base image that is moved
@@ -58,7 +62,6 @@ updates:
       prefix: "build(deps)"
     groups:
       # Minor and patch updates of everything except aiosmtpd: one PR a week.
-      # Major updates are not in the group, so each one gets its own PR.
       python-minor-patch:
         patterns:
           - "*"
@@ -67,10 +70,24 @@ updates:
         update-types:
           - "minor"
           - "patch"
-    # aiosmtpd always gets its own PR: relay/smtp_handler.py works around two
-    # aiosmtpd 1.4.6 internals (case-sensitive AUTH mechanism lookup, and the
-    # authenticator being called synchronously with AuthResult.handled
-    # defaulting to True). Re-check both before merging a bump.
+      # Major updates: one PR per dependency, covering all three files
+      # (without this, each directory gets a PR of its own).
+      python-major:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "aiosmtpd"
+        update-types:
+          - "major"
+        group-by: dependency-name
+      # aiosmtpd always gets its own PR: relay/smtp_handler.py works around two
+      # aiosmtpd 1.4.6 internals (case-sensitive AUTH mechanism lookup, and the
+      # authenticator being called synchronously with AuthResult.handled
+      # defaulting to True). Re-check both before merging a bump.
+      aiosmtpd:
+        patterns:
+          - "aiosmtpd"
+        group-by: dependency-name
 
   - package-ecosystem: "github-actions"
     directory: "/"
