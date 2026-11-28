@@ -26,8 +26,10 @@
 # vendors only `pkg_resources` from setuptools 70.3.0 and lists that version in
 # pip/_vendor/vendor.txt, which is what Trivy reports. The vulnerable code is
 # not shipped: CVE-2025-47273 (HIGH) is in setuptools' PackageIndex.download,
-# CVE-2026-59890 (MEDIUM) in its sdist MANIFEST.in handling. Neither module is
-# in the image, and no sdist is built at runtime. Drop these lines once pip
-# vendors a fixed setuptools (78.1.1 / 83.0.0 or later).
+# CVE-2026-59890 (MEDIUM) in its sdist MANIFEST.in handling, and
+# GHSA-xmj3-9gf7-h52w (LOW) in legacy wheel installs on Windows. None of that
+# code is in the image, and nothing is built or installed at runtime. Drop
+# these lines once pip vendors a fixed setuptools (84.1.0 or later).
 CVE-2025-47273 exp:2027-05-31
 CVE-2026-59890 exp:2027-05-31
+GHSA-xmj3-9gf7-h52w exp:2027-05-31
