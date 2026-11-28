@@ -50,7 +50,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7.0.1
 
       # The values only live as long as this job's throwaway stack, but the
       # repository is public: mask them so they never appear in the logs.
